@@ -2157,6 +2157,10 @@ connectDBComplete(PGconn *conn)
 				return 1;		/* success! */
 
 			case PGRES_POLLING_READING:
+			    if (zpq_buffered_rx(conn->zstream)) {
+			        break;
+			    }
+
 				ret = pqWaitTimed(1, 0, conn, finish_time);
 				if (ret == -1)
 				{
