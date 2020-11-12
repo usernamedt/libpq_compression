@@ -79,6 +79,7 @@ typedef struct ZstdStream
 	ZSTD_outBuffer tx;
 	ZSTD_inBuffer  rx;
 	size_t         tx_not_flushed; /* Amount of data in internal zstd buffer */
+	size_t         rx_not_flushed;
 	size_t         tx_buffered; /* Data which is consumed by zstd_write but not yet sent */
 	size_t         rx_buffered;	/* Data which is received by zstd_read but not yet decompressed */
 	zpq_tx_func    tx_func;
@@ -113,6 +114,7 @@ zstd_create(zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, 
 	zs->tx_buffered = 0;
 	zs->rx_buffered = 0;
 	zs->tx_not_flushed = 0;
+	zs->rx_not_flushed = 0;
 	zs->rx_error = NULL;
 	zs->arg = arg;
 	zs->tx_total = zs->tx_total_raw = 0;
@@ -138,11 +140,15 @@ zstd_read(ZpqStream *zstream, void *buf, size_t size)
 
 	while (1)
 	{
-		rc = ZSTD_decompressStream(zs->rx_stream, &out, &zs->rx);
-		if (ZSTD_isError(rc))
-		{
-			zs->rx_error = ZSTD_getErrorName(rc);
-			return ZPQ_DECOMPRESS_ERROR;
+		if (zs->rx.size != zs->rx.pos){
+            rc = ZSTD_decompressStream(zs->rx_stream, &out, &zs->rx);
+            if (ZSTD_isError(rc))
+            {
+                zs->rx_error = ZSTD_getErrorName(rc);
+                return ZPQ_DECOMPRESS_ERROR;
+            }
+            /* non-error rc specifies expected amount of data left in internal ZSTD buffer */
+            zs->rx_not_flushed = rc;
 		}
         zs->rx_buffered = zs->rx.size - zs->rx.pos;
 		/* Return result if we fill requested amount of bytes or read operation was performed */
