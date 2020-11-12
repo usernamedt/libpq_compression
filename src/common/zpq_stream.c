@@ -208,7 +208,7 @@ zstd_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 			zs->tx_total_raw += in_buf.pos;
 			return rc;
 		}
-	} while (zs->tx.pos == 0 && (in_buf.pos < size || zs->tx_not_flushed)); /* repeat sending data until first partial write */
+	} while (in_buf.pos < size || zs->tx_not_flushed); /* repeat sending data until first partial write */
 
 	zs->tx_total_raw += in_buf.pos;
 	zs->tx_buffered = zs->tx.pos;
