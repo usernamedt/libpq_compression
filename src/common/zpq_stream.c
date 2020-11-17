@@ -209,7 +209,8 @@ zstd_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 			zs->tx_total_raw += in_buf.pos;
 			return rc;
 		}
-	} while (zs->tx.pos == 0 && (in_buf.pos < size || zs->tx_not_flushed)); /* repeat sending data until first partial write */
+    /* repeat sending while there is some data in input or internal zstd buffer */
+    } while (in_buf.pos < size || zs->tx_not_flushed);
 
 	zs->tx_total_raw += in_buf.pos;
 	zs->tx_buffered = zs->tx.pos;
@@ -282,7 +283,7 @@ typedef struct ZlibStream
 	zpq_tx_func    tx_func;
 	zpq_rx_func    rx_func;
 	void*          arg;
-
+    unsigned       tx_deflate_pending;
 	size_t         tx_buffered;
 
 	Bytef          tx_buf[ZLIB_BUFFER_SIZE];
@@ -309,6 +310,7 @@ zlib_create(zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, 
 	memset(&zs->rx, 0, sizeof(zs->tx));
 	zs->rx.next_in = zs->rx_buf;
 	zs->rx.avail_in = ZLIB_BUFFER_SIZE;
+	zs->tx_deflate_pending = 0;
 	rc = inflateInit(&zs->rx);
 	if (rc != Z_OK)
 	{
@@ -383,10 +385,11 @@ zlib_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 		{
 			zs->tx.next_out = zs->tx_buf; /* Reset pointer to the  beginning of buffer */
 
-			if (zs->tx.avail_in != 0) /* Has something in input buffer */
+			if (zs->tx.avail_in != 0 || (zs->tx_deflate_pending > 0)) /* Has something in input or deflate buffer */
 			{
 				rc = deflate(&zs->tx, Z_SYNC_FLUSH);
 				Assert(rc == Z_OK);
+                deflatePending(&zs->tx, &zs->tx_deflate_pending, Z_NULL); /* check if any data left in deflate buffer */
 				zs->tx.next_out = zs->tx_buf; /* Reset pointer to the  beginning of buffer */
 			}
 		}
@@ -402,7 +405,8 @@ zlib_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 			zs->tx_buffered = ZLIB_BUFFER_SIZE - zs->tx.avail_out;
 			return rc;
 		}
-	} while (zs->tx.avail_out == ZLIB_BUFFER_SIZE && zs->tx.avail_in != 0); /* repeat sending data until first partial write */
+    /* repeat sending while there is some data in input or deflate buffer */
+	} while (zs->tx.avail_in != 0 || zs->tx_deflate_pending > 0);
 
 	zs->tx_buffered = ZLIB_BUFFER_SIZE - zs->tx.avail_out;
 
@@ -432,7 +436,7 @@ static size_t
 zlib_buffered_tx(ZpqStream *zstream)
 {
 	ZlibStream* zs = (ZlibStream*)zstream;
-	return zs != NULL ? zs->tx_buffered : 0;
+	return zs != NULL ? zs->tx_buffered + zs->tx_deflate_pending : 0;
 }
 
 static size_t
