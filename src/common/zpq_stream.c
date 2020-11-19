@@ -2,6 +2,7 @@
 #include "common/zpq_stream.h"
 #include "c.h"
 #include "pg_config.h"
+#include <stdio.h>
 
 /*
  * Functions implementing streaming compression algorithm
@@ -283,7 +284,7 @@ typedef struct ZlibStream
 	zpq_tx_func    tx_func;
 	zpq_rx_func    rx_func;
 	void*          arg;
-
+    unsigned       tx_deflate_pending;
 	size_t         tx_buffered;
 
 	Bytef          tx_buf[ZLIB_BUFFER_SIZE];
@@ -310,6 +311,7 @@ zlib_create(zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, 
 	memset(&zs->rx, 0, sizeof(zs->tx));
 	zs->rx.next_in = zs->rx_buf;
 	zs->rx.avail_in = ZLIB_BUFFER_SIZE;
+	zs->tx_deflate_pending = 0;
 	rc = inflateInit(&zs->rx);
 	if (rc != Z_OK)
 	{
@@ -384,10 +386,11 @@ zlib_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 		{
 			zs->tx.next_out = zs->tx_buf; /* Reset pointer to the  beginning of buffer */
 
-			if (zs->tx.avail_in != 0) /* Has something in input buffer */
+			if (zs->tx.avail_in != 0 || (zs->tx_deflate_pending > 0)) /* Has something in input or deflate buffer */
 			{
 				rc = deflate(&zs->tx, Z_SYNC_FLUSH);
 				Assert(rc == Z_OK);
+                deflatePending(&zs->tx, &zs->tx_deflate_pending, Z_NULL); /* check if any data left in deflate buffer */
 				zs->tx.next_out = zs->tx_buf; /* Reset pointer to the  beginning of buffer */
 			}
 		}
@@ -403,7 +406,8 @@ zlib_write(ZpqStream *zstream, void const *buf, size_t size, size_t *processed)
 			zs->tx_buffered = ZLIB_BUFFER_SIZE - zs->tx.avail_out;
 			return rc;
 		}
-	} while (zs->tx.avail_out == ZLIB_BUFFER_SIZE && zs->tx.avail_in != 0); /* repeat sending data until first partial write */
+    /* repeat sending while there is some data in input or deflate buffer */
+	} while (zs->tx.avail_in != 0 || zs->tx_deflate_pending > 0);
 
 	zs->tx_buffered = ZLIB_BUFFER_SIZE - zs->tx.avail_out;
 
@@ -433,7 +437,7 @@ static size_t
 zlib_buffered_tx(ZpqStream *zstream)
 {
 	ZlibStream* zs = (ZlibStream*)zstream;
-	return zs != NULL ? zs->tx_buffered : 0;
+	return zs != NULL ? zs->tx_buffered + zs->tx_deflate_pending : 0;
 }
 
 static size_t
@@ -471,22 +475,93 @@ static ZpqAlgorithm const zpq_algorithms[] =
 ZpqStream*
 zpq_create(int algorithm_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, size_t rx_data_size)
 {
-	ZpqStream* stream = zpq_algorithms[algorithm_impl].create(tx_func, rx_func, arg, rx_data, rx_data_size);
-	if (stream)
-		stream->algorithm = &zpq_algorithms[algorithm_impl];
-	return stream;
+    ZpqStream* stream = zpq_algorithms[algorithm_impl].create(tx_func, rx_func, arg, rx_data, rx_data_size);
+    if (stream){
+        stream->algorithm = &zpq_algorithms[algorithm_impl];
+        printf("[zpq_create buf_rx=%zu]\n", stream->algorithm->buffered_rx(stream));
+        printf("[zpq_create buf_tx=%zu]\n", stream->algorithm->buffered_tx(stream));
+        fflush(stdout);
+    }
+    return stream;
 }
 
 ssize_t
 zpq_read(ZpqStream *zs, void *buf, size_t size)
 {
-	return zs->algorithm->read(zs, buf, size);
+    printf("[zpq_read CALL] [alg=%c] [size=%zu]\n", zs->algorithm->name(), size);
+    fflush(stdout);
+    ssize_t rc;
+    rc = zs->algorithm->read(zs, buf, size);
+    if (rc >= 0) {
+        printf("[zpq_read OK] [alg=%c] [RC=%zd] [size=%zu]\n", zs->algorithm->name(), rc, size);
+        fflush(stdout);
+        ssize_t display_rc;
+        ssize_t last_rc;
+        if (rc > 12) {
+            display_rc = 12;
+            last_rc = rc - 12;
+        } else {
+            display_rc = rc;
+            last_rc = 0;
+        }
+
+        printf("START<");
+        fwrite(buf, sizeof(char), display_rc, stdout);
+        printf(">\n");
+        printf("END<");
+        fwrite(buf + last_rc, sizeof(char), display_rc, stdout);
+        printf(">\n");
+        fflush(stdout);
+    } else {
+        printf("[zpq_read FAIL] [alg=%c] [RC=%zd] [size=%zu] [err=%s]\n", zs->algorithm->name(), rc, size, strerror(errno));
+        fflush(stdout);
+    }
+    printf("[zpq_read buf_rx=%zu]\n", zs->algorithm->buffered_rx(zs));
+    fflush(stdout);
+    return rc;
 }
 
 ssize_t
 zpq_write(ZpqStream *zs, void const *buf, size_t size, size_t* processed)
 {
-	return zs->algorithm->write(zs, buf, size, processed);
+    printf("[zpq_write CALL] [alg=%c] [size=%zu] [proc=%zu]\n", zs->algorithm->name(), size, *processed);
+    fflush(stdout);
+
+//    printf("<");
+//      fwrite(buf, sizeof(char), size, stdout);
+//    printf(">\n");
+
+    ssize_t rc;
+    rc = zs->algorithm->write(zs, buf, size, processed);
+
+    if (rc >= 0) {
+        printf("[zpq_write OK] [alg=%c] [RC=%zd] [size=%zu] [proc=%zu]\n", zs->algorithm->name(), rc, size, *processed);
+        fflush(stdout);
+
+        ssize_t display_rc;
+        ssize_t last_rc;
+        if (rc > 12) {
+            display_rc = 12;
+            last_rc = rc - 12;
+        } else {
+            display_rc = rc;
+            last_rc = 0;
+        }
+
+        printf("START<");
+        fwrite(buf, sizeof(char), display_rc, stdout);
+        printf(">\n");
+        printf("END<");
+        fwrite(buf + last_rc, sizeof(char), display_rc, stdout);
+        printf(">\n");
+        fflush(stdout);
+    } else {
+        printf("[zpq_write FAIL] [alg=%c] [RC=%zd] [size=%zu] [proc=%zu] [err=%s]\n", zs->algorithm->name(), rc, size, *processed, strerror(errno));
+        fflush(stdout);
+    }
+    printf("[zpq_write buf_tx=%zu]\n", zs->algorithm->buffered_tx(zs));
+    fflush(stdout);
+    return rc;
 }
 
 void
