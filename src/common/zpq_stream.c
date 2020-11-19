@@ -81,7 +81,10 @@ typedef struct ZstdStream
 	size_t         tx_not_flushed; /* Amount of data in internal zstd buffer */
 	size_t         tx_buffered;    /* Data which is consumed by ztd_write but not yet sent */
 	size_t         rx_buffered;    /* Data which is needed for ztd_read */
-	zpq_tx_func    tx_func;
+    /* In case of the last call of zstd_read did not consume
+     * some data from rx_func we use is_deferred_rx_call to indicate this */
+    size_t         is_deferred_rx_call;
+    zpq_tx_func    tx_func;
 	zpq_rx_func    rx_func;
 	void*          arg;
 	char const*    rx_error;    /* Decompress error message */
@@ -118,7 +121,8 @@ zstd_create(zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, 
 	zs->tx_total = zs->tx_total_raw = 0;
 	zs->rx_total = zs->rx_total_raw = 0;
 	zs->rx.size = rx_data_size;
-	Assert(rx_data_size < ZSTD_BUFFER_SIZE);
+    zs->is_deferred_rx_call = 0;
+    Assert(rx_data_size < ZSTD_BUFFER_SIZE);
 	memcpy(zs->rx_buf, rx_data, rx_data_size);
 
 	return (ZpqStream*)zs;
@@ -136,7 +140,9 @@ zstd_read(ZpqStream *zstream, void *buf, size_t size)
 
 	while (1)
 	{
-		if (zs->rx.pos != zs->rx.size || zs->rx_buffered == 0)
+        /* indicate that we initiated read attempt from rx_func */
+        zs->is_deferred_rx_call = 1;
+        if (zs->rx.pos != zs->rx.size || zs->rx_buffered == 0)
 		{
 			rc = ZSTD_decompressStream(zs->rx_stream, &out, &zs->rx);
 			if (ZSTD_isError(rc))
@@ -158,7 +164,9 @@ zstd_read(ZpqStream *zstream, void *buf, size_t size)
 			}
 		}
 		rc = zs->rx_func(zs->arg, (char*)zs->rx.src + zs->rx.size, ZSTD_BUFFER_SIZE - zs->rx.size);
-		if (rc > 0) /* read fetches some data */
+        /* if we've made a call to rx function, reset the deferred rx flag */
+        zs->is_deferred_rx_call = 0;
+        if (rc > 0) /* read fetches some data */
 		{
 			zs->rx.size += rc;
 			zs->rx_total += rc;
@@ -247,7 +255,7 @@ static size_t
 zstd_buffered_rx(ZpqStream *zstream)
 {
 	ZstdStream* zs = (ZstdStream*)zstream;
-	return zs != NULL ? zs->rx.size - zs->rx.pos : 0;
+    return zs != NULL ? (zs->rx.size - zs->rx.pos) + zs->is_deferred_rx_call  : 0;
 }
 
 static char
