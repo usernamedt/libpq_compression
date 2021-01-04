@@ -8,8 +8,12 @@
 
 #include <stdlib.h>
 
+#define ZPQ_OK (0)
 #define ZPQ_IO_ERROR (-1)
 #define ZPQ_DECOMPRESS_ERROR (-2)
+#define ZPQ_COMPRESS_ERROR (-3)
+#define ZPQ_STREAM_END (-4)
+#define ZPQ_DATA_PENDING (-5)
 
 #define ZPQ_DEFAULT_COMPRESSION_LEVEL (1)
 
