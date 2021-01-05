@@ -483,7 +483,7 @@ zpq_read(ZpqStream *zs, void *buf, size_t size)
         size_t rx_processed = 0;
         size_t buf_processed = 0;
         ssize_t rc = zs->d_algorithm->decompress(zs->d_stream,
-                                           (char*)zs->rx_buf + zs->rx_pos, zs->rx_size - zs->rx_pos, &rx_processed,
+                                                 (char*)zs->rx_buf + zs->rx_pos, zs->rx_size - zs->rx_pos, &rx_processed,
                                                  buf, size, &buf_processed);
         zs->rx_pos += rx_processed;
         zs->rx_total_raw += rx_processed;
@@ -546,7 +546,7 @@ zpq_write(ZpqStream *zs, void const *buf, size_t size, size_t* processed)
                 return rc;
             }
         }
-        /* repeat sending while there is some data in input or internal zstd buffer */
+        /* repeat sending while there is some data in input or internal compression buffer */
     } while (buf_pos < size || zs->tx_not_flushed);
 
     return buf_pos;
