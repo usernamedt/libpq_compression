@@ -79,6 +79,8 @@ typedef struct
      * Get decompressor error message.
      */
     char const* (*decompress_error)(void *ds);
+
+    ssize_t (*finish_compression)(void *cs);
 } ZpqAlgorithm;
 
 
@@ -114,6 +116,12 @@ struct ZpqStream
 
     bool           rx_not_flushed;
     bool           tx_not_flushed;
+
+    bool           is_compressing;
+    bool           is_decompressing;
+
+    size_t         rx_msg_bytes_left;
+    size_t         tx_msg_bytes_left;
 };
 
 #if HAVE_LIBZSTD
@@ -407,13 +415,35 @@ no_compression_name(void)
 static ZpqAlgorithm const zpq_algorithms[] =
 {
 #if HAVE_LIBZSTD
-	{zstd_name, zstd_create_compressor, zstd_create_decompressor, zstd_decompress, zstd_compress, zstd_free_compressor, zstd_free_decompressor, zstd_compress_error, zstd_decompress_error},
+	{zstd_name, zstd_create_compressor, zstd_create_decompressor, zstd_decompress, zstd_compress, zstd_free_compressor, zstd_free_decompressor, zstd_compress_error, zstd_decompress_error, NULL},
 #endif
 #if HAVE_LIBZ
-	{zlib_name, zlib_create_compressor, zlib_create_decompressor, zlib_decompress, zlib_compress, zlib_free_compressor, zlib_free_decompressor, zlib_error, zlib_error},
+	{zlib_name, zlib_create_compressor, zlib_create_decompressor, zlib_decompress, zlib_compress, zlib_free_compressor, zlib_free_decompressor, zlib_error, zlib_error, NULL},
 #endif
 	{no_compression_name}
 };
+
+static ssize_t zpq_init_compressor(ZpqStream *zs, int c_alg_impl, int c_level) {
+    zs->c_algorithm = &zpq_algorithms[c_alg_impl];
+    zs->c_stream = zpq_algorithms[c_alg_impl].create_compressor(c_level);
+    if (zs->c_stream == NULL) {
+        return -1;
+    }
+    return 0;
+}
+
+static ssize_t zpq_init_decompressor(ZpqStream *zs, int d_alg_impl) {
+    zs->d_algorithm = &zpq_algorithms[d_alg_impl];
+    zs->d_stream = zpq_algorithms[d_alg_impl].create_decompressor();
+    if (zs->d_stream == NULL) {
+        return -1;
+    }
+    return 0;
+}
+
+//static ssize_t zpq_end_compression(ZpqStream *zs) {
+//    return 0;
+//}
 
 /*
  * Index of used compression algorithm in zpq_algorithms array.
@@ -436,23 +466,21 @@ zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq
     zs->tx_not_flushed = false;
     zs->rx_not_flushed = false;
 
+    zs->is_compressing = false;
+    zs->is_decompressing = false;
+
+    zs->rx_msg_bytes_left = 0;
+    zs->tx_msg_bytes_left = 0;
+
     zs->rx_size = rx_data_size;
     Assert(rx_data_size < ZPQ_BUFFER_SIZE);
     memcpy(zs->rx_buf, rx_data, rx_data_size);
 
-    zs->c_algorithm = &zpq_algorithms[c_alg_impl];
-    zs->c_stream = zpq_algorithms[c_alg_impl].create_compressor(c_level);
-    if (zs->c_stream == NULL) {
+    if (zpq_init_compressor(zs, c_alg_impl, c_level) || zpq_init_decompressor(zs, d_alg_impl)) {
         free(zs);
         return NULL;
     }
-    zs->d_algorithm = &zpq_algorithms[d_alg_impl];
-    zs->d_stream = zpq_algorithms[d_alg_impl].create_decompressor();
-    if (zs->d_stream == NULL) {
-        free(zs);
-        return NULL;
-    }
-
+    zs->is_decompressing = zs->is_compressing = true; /* tmp */
 	return zs;
 }
 
@@ -462,11 +490,74 @@ zpq_read(ZpqStream *zs, void *buf, size_t size)
     size_t buf_pos = 0;
 
     while (buf_pos == 0) { /* Read until some data fetched */
-        if (zs->rx_pos == zs->rx_size) {
-            zs->rx_pos = zs->rx_size = 0; /* Reset rx buffer */
+        if (zs->rx_pos > 0)
+        {
+            if (zs->rx_size > zs->rx_pos)
+            {
+                /* still some unread data, left-justify it in the buffer */
+                memmove(zs->rx_buf, zs->rx_buf + zs->rx_pos,
+                        zs->rx_size - zs->rx_pos);
+                zs->rx_size -= zs->rx_pos;
+                zs->rx_pos = 0;
+            }
+            else
+                zs->rx_pos = zs->rx_size = 0; /* Reset rx buffer */
         }
 
-        if (zs->rx_pos == zs->rx_size && !zs->rx_not_flushed) {
+        if (zs->is_decompressing) {
+            if (zs->rx_pos == zs->rx_size && !zs->rx_not_flushed) {
+                ssize_t rc = zs->rx_func(zs->arg, (char*)zs->rx_buf + zs->rx_size, ZPQ_BUFFER_SIZE - zs->rx_size);
+                if (rc > 0) /* read fetches some data */
+                {
+                    zs->rx_size += rc;
+                    zs->rx_total += rc;
+                }
+                else /* read failed */
+                {
+                    return rc;
+                }
+            }
+
+            Assert(zs->rx_pos <= zs->rx_size);
+            size_t rx_processed = 0;
+            size_t buf_processed = 0;
+            ssize_t rc = zs->d_algorithm->decompress(zs->d_stream,
+                                                     (char*)zs->rx_buf + zs->rx_pos, zs->rx_size - zs->rx_pos, &rx_processed,
+                                                     buf, size, &buf_processed);
+            zs->rx_pos += rx_processed;
+            zs->rx_total_raw += rx_processed;
+            buf_pos += buf_processed;
+            zs->rx_not_flushed = false;
+            if (rc == ZPQ_STREAM_END) {
+                zs->is_decompressing = false;
+                continue;
+            }
+            if (rc == ZPQ_DATA_PENDING) {
+                zs->rx_not_flushed = true;
+                continue;
+            }
+            if (rc != ZPQ_OK) {
+                return ZPQ_DECOMPRESS_ERROR;
+            }
+        } else if (zs->rx_msg_bytes_left == 0) {  /* determine next message type */
+            /* try to get next msg type, then set is_decompressing or rx_msg_bytes_left */
+            if (zs->rx_size - zs->rx_pos >= 1) { /* read msg type and length if possible */
+                char msg_type = zs->rx_buf[zs->rx_pos];
+
+                if (msg_type  == 'y') {
+                    zs->is_decompressing = true;
+                    zs->rx_pos += 1;
+                    continue;
+                }
+
+                if (zs->rx_size - zs->rx_pos >= 5) {
+                    uint32 msg_len;
+                    memcpy(&msg_len, zs->rx_buf +zs-> rx_pos + 1, 4);
+                    zs->rx_msg_bytes_left = msg_len + 1;
+                    continue;
+                }
+            }
+
             ssize_t rc = zs->rx_func(zs->arg, (char*)zs->rx_buf + zs->rx_size, ZPQ_BUFFER_SIZE - zs->rx_size);
             if (rc > 0) /* read fetches some data */
             {
@@ -477,27 +568,33 @@ zpq_read(ZpqStream *zs, void *buf, size_t size)
             {
                 return rc;
             }
-        }
+        } else { /* forward raw bytes to the output */
+            if (zs->rx_pos == zs->rx_size) {
+                ssize_t rc = zs->rx_func(zs->arg, (char*)zs->rx_buf + zs->rx_size, ZPQ_BUFFER_SIZE - zs->rx_size);
+                if (rc > 0) /* read fetches some data */
+                {
+                    zs->rx_size += rc;
+                    zs->rx_total += rc;
+                }
+                else /* read failed */
+                {
+                    return rc;
+                }
+            }
 
-        Assert(zs->rx_pos <= zs->rx_size);
-        size_t rx_processed = 0;
-        size_t buf_processed = 0;
-        ssize_t rc = zs->d_algorithm->decompress(zs->d_stream,
-                                                 (char*)zs->rx_buf + zs->rx_pos, zs->rx_size - zs->rx_pos, &rx_processed,
-                                                 buf, size, &buf_processed);
-        zs->rx_pos += rx_processed;
-        zs->rx_total_raw += rx_processed;
-        buf_pos += buf_processed;
-        zs->rx_not_flushed = false;
-        if (rc == ZPQ_STREAM_END) {
-            break;
-        }
-        if (rc == ZPQ_DATA_PENDING) {
-            zs->rx_not_flushed = true;
-            continue;
-        }
-        if (rc != ZPQ_OK) {
-            return ZPQ_DECOMPRESS_ERROR;
+            Assert(zs->rx_pos <= zs->rx_size);
+            size_t copy_len = zs->rx_msg_bytes_left;
+            if ((zs->rx_size - zs->rx_pos) < copy_len) {
+                copy_len = (zs->rx_size - zs->rx_pos);
+            }
+            if (size < copy_len) {
+                copy_len = size;
+            }
+            memcpy(buf, (char*)zs->rx_buf + zs->rx_pos, copy_len);
+            zs->rx_pos += copy_len;
+            zs->rx_total_raw += copy_len;
+            buf_pos += copy_len;
+            zs->rx_msg_bytes_left -= copy_len;
         }
     }
     return buf_pos;
