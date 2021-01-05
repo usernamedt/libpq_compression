@@ -278,12 +278,6 @@ zstd_name(void)
 #include <zlib.h>
 
 
-typedef struct ZlibStream
-{
-    z_stream tx;
-	z_stream rx;
-} ZlibStream;
-
 static void*
 zlib_create_compressor(int level)
 {
