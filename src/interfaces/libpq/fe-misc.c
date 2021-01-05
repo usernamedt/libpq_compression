@@ -682,8 +682,8 @@ retry3:
 		if (nread == ZPQ_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-							  libpq_gettext("decompress error: %s\n"),
-							  zpq_error(conn->zstream));
+                              libpq_gettext("decompress error: %s\n"),
+                              zpq_decompress_error(conn->zstream));
 			return -1;
 		}
 
@@ -785,8 +785,8 @@ retry4:
 		if (nread == ZPQ_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-							  libpq_gettext("decompress error: %s\n"),
-							  zpq_error(conn->zstream));
+                              libpq_gettext("decompress error: %s\n"),
+                              zpq_decompress_error(conn->zstream));
 			return -1;
 		}
 

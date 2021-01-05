@@ -1072,7 +1072,7 @@ pq_recvbuf(bool nowait)
 		{
 			if (r == ZPQ_DECOMPRESS_ERROR)
 			{
-				char const* msg = zpq_error(PqStream);
+				char const* msg = zpq_decompress_error(PqStream);
 				if (msg == NULL)
 					msg = "end of stream";
 				ereport(COMMERROR,
