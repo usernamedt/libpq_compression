@@ -25,14 +25,14 @@ typedef struct
     void* (*create_decompressor)();
 
 	/*
-	 * Decompress up to "rx_size" compressed bytes from *rx_buf and write up to
-	 * "size" raw (decompressed) bytes to *buf.
-	 * Number of decompressed bytes written to *buf is stored in *buf_processed.
-	 * Number of compressed bytes read from *rx_buf is stored in *rx_processed.
+	 * Decompress up to "src_size" compressed bytes from *src and write up to
+	 * "dst_size" raw (decompressed) bytes to *dst.
+	 * Number of decompressed bytes written to *dst is stored in *dst_processed.
+	 * Number of compressed bytes read from *src is stored in *src_processed.
 	 *
 	 * Return codes:
 	 * ZPQ_OK if no errors were encountered during decompression attempt.
-	 * This return code does not guarantee that *rx_processed > 0 or *buf_processed > 0.
+	 * This return code does not guarantee that *src_processed > 0 or *dst_processed > 0.
 	 *
 	 * ZPQ_DATA_PENDING means that there might be some data left within
 	 * decompressor internal buffers.
@@ -41,24 +41,24 @@ typedef struct
 	 *
 	 * ZPQ_DECOMPRESS_ERROR if encountered an error during decompression attempt.
 	 */
-    ssize_t (*decompress)(void *ds, void *rx_buf, size_t rx_size, size_t *rx_processed, void *buf, size_t size, size_t *buf_processed);
+    ssize_t (*decompress)(void *ds, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed);
 
 	/*
-	 * Compress up to "tx_size" raw (non-compressed) bytes from *tx_buf and write up to
-	 * "size" compressed bytes to *buf.
-	 * Number of compressed bytes written to *buf is stored in *buf_processed.
-	 * Number of non-compressed bytes read from *tx_buf is stored in *tx_processed.
+	 * Compress up to "src_size" raw (non-compressed) bytes from *src and write up to
+	 * "dst_size" compressed bytes to *dst.
+	 * Number of compressed bytes written to *dst is stored in *dst_processed.
+	 * Number of non-compressed bytes read from *src is stored in *src_processed.
 	 *
 	 * Return codes:
 	 * ZPQ_OK if no errors were encountered during compression attempt.
-	 * This return code does not guarantee that *tx_processed > 0 or *buf_processed > 0.
+	 * This return code does not guarantee that *src_processed > 0 or *dst_processed > 0.
 	 *
 	 * ZPQ_DATA_PENDING means that there might be some data left within
 	 * compressor internal buffers.
 	 *
 	 * ZPQ_COMPRESS_ERROR if encountered an error during compression attempt.
 	 */
-    ssize_t (*compress)(void *cs, void *tx_buf, size_t tx_size, size_t *tx_processed, void const *buf, size_t size, size_t *buf_processed);
+    ssize_t (*compress)(void *cs, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed);
 
 	/*
 	 * Free compression stream created by create_compressor function.
@@ -163,21 +163,21 @@ zstd_create_decompressor()
 }
 
 static ssize_t
-zstd_decompress(void *d_stream, void *rx_buf, size_t rx_size, size_t *rx_processed, void *buf, size_t size, size_t *buf_processed)
+zstd_decompress(void *d_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
     ZPQ_ZSTD_DStream* ds = (ZPQ_ZSTD_DStream*)d_stream;
     ZSTD_inBuffer in;
-    in.src = rx_buf;
+    in.src = src;
     in.pos = 0;
-    in.size = rx_size;
+    in.size = src_size;
 	ZSTD_outBuffer out;
-	out.dst = buf;
+	out.dst = dst;
 	out.pos = 0;
-	out.size = size;
+	out.size = dst_size;
 
     size_t rc = ZSTD_decompressStream(ds->stream, &out, &in);
-    *rx_processed = in.pos;
-    *buf_processed = out.pos;
+    *src_processed = in.pos;
+    *dst_processed = out.pos;
     if (ZSTD_isError(rc))
     {
         ds->error = ZSTD_getErrorName(rc);
@@ -192,23 +192,23 @@ zstd_decompress(void *d_stream, void *rx_buf, size_t rx_size, size_t *rx_process
 }
 
 static ssize_t
-zstd_compress(void *c_stream, void *tx_buf, size_t tx_size, size_t *tx_processed, void const *buf, size_t size, size_t *buf_processed)
+zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
     ZPQ_ZSTD_CStream* cs = (ZPQ_ZSTD_CStream*)c_stream;
-    ZSTD_outBuffer out;
-    out.dst = tx_buf;
-    out.pos = 0;
-    out.size = tx_size;
     ZSTD_inBuffer in;
-    in.src = buf;
+    in.src = src;
     in.pos = 0;
-    in.size = size;
+    in.size = src_size;
+    ZSTD_outBuffer out;
+    out.dst = dst;
+    out.pos = 0;
+    out.size = dst_size;
 
-    if (in.pos < size) /* Has something to compress in input buffer */
+    if (in.pos < src_size) /* Has something to compress in input buffer */
     {
         size_t rc = ZSTD_compressStream(cs->stream, &out, &in);
-        *tx_processed = out.pos;
-        *buf_processed = in.pos;
+        *dst_processed = out.pos;
+        *src_processed = in.pos;
         if (ZSTD_isError(rc))
         {
             cs->error = ZSTD_getErrorName(rc);
@@ -216,10 +216,10 @@ zstd_compress(void *c_stream, void *tx_buf, size_t tx_size, size_t *tx_processed
         }
     }
 
-    if (in.pos == size) /* All data is compressed: flush internal zstd buffer */
+    if (in.pos == src_size) /* All data is compressed: flush internal zstd buffer */
     {
         size_t tx_not_flushed = ZSTD_flushStream(cs->stream, &out);
-        *tx_processed = out.pos;
+        *dst_processed = out.pos;
         if (tx_not_flushed > 0) {
             return ZPQ_DATA_PENDING;
         }
@@ -309,18 +309,18 @@ zlib_create_decompressor()
 }
 
 static ssize_t
-zlib_decompress(void *d_stream, void *rx_buf, size_t rx_size, size_t *rx_processed, void *buf, size_t size, size_t *buf_processed)
+zlib_decompress(void *d_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
     z_stream* ds = (z_stream*)d_stream;
 	int rc;
-    ds->next_in = rx_buf;
-    ds->avail_in = rx_size;
-    ds->next_out = (Bytef *)buf;
-    ds->avail_out = size;
+    ds->next_in = (Bytef *)src;
+    ds->avail_in = src_size;
+    ds->next_out = (Bytef *)dst;
+    ds->avail_out = dst_size;
 
     rc = inflate(ds, Z_SYNC_FLUSH);
-    *rx_processed = rx_size - ds->avail_in;
-    *buf_processed = size - ds->avail_out;
+    *src_processed = src_size - ds->avail_in;
+    *dst_processed = dst_size - ds->avail_out;
 
     if (rc == Z_STREAM_END) {
         return ZPQ_STREAM_END;
@@ -334,19 +334,19 @@ zlib_decompress(void *d_stream, void *rx_buf, size_t rx_size, size_t *rx_process
 }
 
 static ssize_t
-zlib_compress(void *c_stream, void *tx_buf, size_t tx_size, size_t *tx_processed, void const *buf, size_t size, size_t *buf_processed)
+zlib_compress(void *c_stream, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
     z_stream* cs = (z_stream*)c_stream;
     int rc;
-    cs->next_out = (Bytef *)tx_buf;
-    cs->avail_out = tx_size;
-    cs->next_in = (Bytef *)buf;
-    cs->avail_in = size;
+    cs->next_out = (Bytef *)dst;
+    cs->avail_out = dst_size;
+    cs->next_in = (Bytef *)src;
+    cs->avail_in = src_size;
 
     rc = deflate(cs, Z_SYNC_FLUSH);
     Assert(rc == Z_OK);
-    *tx_processed = tx_size - cs->avail_out;
-    *buf_processed = size - cs->avail_in;
+    *dst_processed = dst_size - cs->avail_out;
+    *src_processed = src_size - cs->avail_in;
 
     unsigned deflate_pending = 0;
     deflatePending(cs, &deflate_pending, Z_NULL); /* check if any data left in deflate buffer */
@@ -486,7 +486,9 @@ zpq_read(ZpqStream *zs, void *buf, size_t size)
         zs->rx_total_raw += rx_processed;
         buf_pos += buf_processed;
         zs->rx_not_flushed = false;
-
+        if (rc == ZPQ_STREAM_END) {
+            break;
+        }
         if (rc == ZPQ_DATA_PENDING) {
             zs->rx_not_flushed = true;
             continue;
@@ -511,8 +513,8 @@ zpq_write(ZpqStream *zs, void const *buf, size_t size, size_t* processed)
             size_t tx_processed = 0;
             size_t buf_processed = 0;
             ssize_t rc = zs->algorithm->compress(zs->c_stream,
-                                             (char*)zs->tx_buf + zs->tx_size, ZPQ_BUFFER_SIZE - zs->tx_size, &tx_processed,
-                                             (char*)buf + buf_pos, size - buf_pos, &buf_processed);
+                                                 (char*)buf + buf_pos, size - buf_pos, &buf_processed,
+                                                 (char*)zs->tx_buf + zs->tx_size, ZPQ_BUFFER_SIZE - zs->tx_size, &tx_processed);
 
             zs->tx_size += tx_processed;
             buf_pos += buf_processed;
