@@ -25,15 +25,16 @@ typedef ssize_t(*zpq_rx_func)(void* arg, void* data, size_t size);
 
 /*
  * Create compression stream with using rx/tx function for fetching/sending compressed data.
- * impl: index of chosen compression algorithm
- * level: compression level
+ * c_alg_impl: index of chosen compression algorithm
+ * c_level: compression c_level
+ * d_alg_impl: index of chosen decompression algorithm
  * tx_func: function for writing compressed data in underlying stream
  * rx_func: function for receiving compressed data from underlying stream
  * arg: context passed to the function
  * rx_data: received data (compressed data already fetched from input stream)
  * rx_data_size: size of data fetched from input stream
  */
-ZpqStream* zpq_create(int impl, int level, zpq_tx_func tx_func, zpq_rx_func rx_func, void* arg, char* rx_data, size_t rx_data_size);
+ZpqStream* zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void* arg, char* rx_data, size_t rx_data_size);
 
 /*
  * Read up to "size" raw (decompressed) bytes.
@@ -78,7 +79,12 @@ void zpq_free(ZpqStream* zs);
 /*
  * Get the name of chosen compression algorithm.
  */
-char const* zpq_algorithm_name(ZpqStream* zs);
+char const* zpq_compress_algorithm_name(ZpqStream* zs);
+
+/*
+ * Get the name of chosen decompression algorithm.
+ */
+char const* zpq_decompress_algorithm_name(ZpqStream* zs);
 
 /*
   Returns zero terminated array with compression algorithms names

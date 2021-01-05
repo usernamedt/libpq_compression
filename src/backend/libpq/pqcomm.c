@@ -282,7 +282,7 @@ pq_configure(Port* port)
 
 		if (index >= 0) /* Use compression */
 		{
-			PqStream = zpq_create(impl, compression_level, write_compressed, read_compressed, MyProcPort, NULL, 0);
+			PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort, NULL, 0);
 			if (!PqStream)
 			{
 				ereport(LOG,
@@ -2096,7 +2096,7 @@ PG_FUNCTION_INFO_V1(pg_compression_algorithm);
 Datum
 pg_compression_algorithm(PG_FUNCTION_ARGS)
 {
-	char const* algorithm_name = PqStream ? zpq_algorithm_name(PqStream) : NULL;
+	char const* algorithm_name = PqStream ? zpq_compress_algorithm_name(PqStream) : NULL;
 	if (algorithm_name)
 		PG_RETURN_TEXT_P(cstring_to_text(algorithm_name));
 	else

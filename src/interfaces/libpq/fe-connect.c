@@ -3271,6 +3271,7 @@ keep_going:						/* We will come back to here until there is
 						Assert(!conn->zstream);
 						conn->zstream = zpq_create(conn->compressors[index].impl,
 												   conn->compressors[index].level,
+                                                   conn->compressors[index].impl,
 												   (zpq_tx_func)pqsecure_write, (zpq_rx_func)pqsecure_read, conn,
 												   &conn->inBuffer[conn->inCursor], conn->inEnd-conn->inCursor);
 						if (!conn->zstream)

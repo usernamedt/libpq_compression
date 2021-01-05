@@ -89,8 +89,10 @@ typedef struct
 
 struct ZpqStream
 {
-    ZpqAlgorithm const* algorithm;
+    ZpqAlgorithm const* c_algorithm;
     void*               c_stream;
+
+    ZpqAlgorithm const* d_algorithm;
     void*               d_stream;
 
     char           tx_buf[ZPQ_BUFFER_SIZE];
@@ -417,7 +419,7 @@ static ZpqAlgorithm const zpq_algorithms[] =
  * Index of used compression algorithm in zpq_algorithms array.
  */
 ZpqStream*
-zpq_create(int algorithm_impl, int level, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, size_t rx_data_size)
+zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char* rx_data, size_t rx_data_size)
 {
     ZpqStream* zs = (ZpqStream*)malloc(sizeof(ZpqStream));
     zs->tx_pos = 0;
@@ -438,13 +440,14 @@ zpq_create(int algorithm_impl, int level, zpq_tx_func tx_func, zpq_rx_func rx_fu
     Assert(rx_data_size < ZPQ_BUFFER_SIZE);
     memcpy(zs->rx_buf, rx_data, rx_data_size);
 
-    zs->algorithm = &zpq_algorithms[algorithm_impl];
-    zs->c_stream = zpq_algorithms[algorithm_impl].create_compressor(level);
+    zs->c_algorithm = &zpq_algorithms[c_alg_impl];
+    zs->c_stream = zpq_algorithms[c_alg_impl].create_compressor(c_level);
     if (zs->c_stream == NULL) {
         free(zs);
         return NULL;
     }
-    zs->d_stream = zpq_algorithms[algorithm_impl].create_decompressor();
+    zs->d_algorithm = &zpq_algorithms[d_alg_impl];
+    zs->d_stream = zpq_algorithms[d_alg_impl].create_decompressor();
     if (zs->d_stream == NULL) {
         free(zs);
         return NULL;
@@ -479,9 +482,9 @@ zpq_read(ZpqStream *zs, void *buf, size_t size)
         Assert(zs->rx_pos <= zs->rx_size);
         size_t rx_processed = 0;
         size_t buf_processed = 0;
-        ssize_t rc = zs->algorithm->decompress(zs->d_stream,
+        ssize_t rc = zs->d_algorithm->decompress(zs->d_stream,
                                            (char*)zs->rx_buf + zs->rx_pos, zs->rx_size - zs->rx_pos, &rx_processed,
-                                           buf, size, &buf_processed);
+                                                 buf, size, &buf_processed);
         zs->rx_pos += rx_processed;
         zs->rx_total_raw += rx_processed;
         buf_pos += buf_processed;
@@ -512,7 +515,7 @@ zpq_write(ZpqStream *zs, void const *buf, size_t size, size_t* processed)
 
             size_t tx_processed = 0;
             size_t buf_processed = 0;
-            ssize_t rc = zs->algorithm->compress(zs->c_stream,
+            ssize_t rc = zs->c_algorithm->compress(zs->c_stream,
                                                  (char*)buf + buf_pos, size - buf_pos, &buf_processed,
                                                  (char*)zs->tx_buf + zs->tx_size, ZPQ_BUFFER_SIZE - zs->tx_size, &tx_processed);
 
@@ -554,10 +557,10 @@ zpq_free(ZpqStream *zs)
 {
 	if (zs) {
 	    if (zs->c_stream) {
-            zs->algorithm->free_compressor(zs->c_stream);
+            zs->c_algorithm->free_compressor(zs->c_stream);
 	    }
         if (zs->d_stream) {
-            zs->algorithm->free_decompressor(zs->d_stream);
+            zs->d_algorithm->free_decompressor(zs->d_stream);
         }
 	    free(zs);
 	}
@@ -566,13 +569,13 @@ zpq_free(ZpqStream *zs)
 char const*
 zpq_compress_error(ZpqStream *zs)
 {
-	return zs->algorithm->compress_error(zs->c_stream);
+	return zs->c_algorithm->compress_error(zs->c_stream);
 }
 
 char const*
 zpq_decompress_error(ZpqStream *zs)
 {
-    return zs->algorithm->decompress_error(zs->d_stream);
+    return zs->d_algorithm->decompress_error(zs->d_stream);
 }
 
 size_t
@@ -605,7 +608,13 @@ zpq_get_supported_algorithms(void)
 }
 
 char const*
-zpq_algorithm_name(ZpqStream *zs)
+zpq_compress_algorithm_name(ZpqStream *zs)
 {
-	return zs ? zs->algorithm->name() : NULL;
+	return zs ? zs->c_algorithm->name() : NULL;
+}
+
+char const*
+zpq_decompress_algorithm_name(ZpqStream *zs)
+{
+    return zs ? zs->d_algorithm->name() : NULL;
 }
