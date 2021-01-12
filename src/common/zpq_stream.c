@@ -126,6 +126,8 @@ struct ZpqStream
 
     size_t         rx_msg_bytes_left;
     size_t         tx_msg_bytes_left;
+    char           tx_msg_h_buf[5];
+    size_t         tx_msg_h_pos;
 };
 
 #if HAVE_LIBZSTD
@@ -509,7 +511,7 @@ zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq
 
     zs->rx_msg_bytes_left = 0;
     zs->tx_msg_bytes_left = 0;
-
+    zs->tx_msg_h_pos = 0;
     zs->rx_size = rx_data_size;
 	Assert(rx_data_size < ZPQ_BUFFER_SIZE);
 	memcpy(zs->rx_buf, rx_data, rx_data_size);
@@ -667,22 +669,28 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
         }
         zs->tx_pos = zs->tx_size = 0;	/* Reset pointer to the beginning of buffer */
 		if (zs->is_compressing && (zs->tx_msg_bytes_left > 0)) {
-            size_t		tx_processed = 0;
-            size_t		buf_processed = 0;
-            ssize_t     to_compress;
+            size_t tx_processed = 0;
+            size_t buf_processed = 0;
+            ssize_t to_compress;
 
-            if (zs->tx_msg_bytes_left < (size - buf_pos)) {
-                to_compress = zs->tx_msg_bytes_left;
+            if (zs->tx_msg_h_pos > 0) {
+                rc = zs->c_algorithm->compress(zs->c_stream,
+                                               (char *) zs->tx_msg_h_buf, zs->tx_msg_h_pos, &buf_processed,
+                                               (char *) zs->tx_buf + zs->tx_size, ZPQ_BUFFER_SIZE - zs->tx_size, &tx_processed);
+                zs->tx_msg_h_pos -= buf_processed;
             } else {
-                to_compress = size - buf_pos;
-            }
-
-            rc = zs->c_algorithm->compress(zs->c_stream,
+                if (zs->tx_msg_bytes_left < (size - buf_pos)) {
+                    to_compress = zs->tx_msg_bytes_left;
+                } else {
+                    to_compress = size - buf_pos;
+                }
+                rc = zs->c_algorithm->compress(zs->c_stream,
                                            (char *) buf + buf_pos, to_compress, &buf_processed,
                                            (char *) zs->tx_buf + zs->tx_size, ZPQ_BUFFER_SIZE - zs->tx_size, &tx_processed);
+                buf_pos += buf_processed;
+            }
 
             zs->tx_size += tx_processed;
-            buf_pos += buf_processed;
             zs->tx_msg_bytes_left -= buf_processed;
             zs->tx_total_raw += buf_processed;
             zs->tx_not_flushed = false;
@@ -699,8 +707,14 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
             }
 		} else if (zs->tx_msg_bytes_left == 0) { /* determine next message type */
             /* try to get next msg type, then set is_compressing and tx_msg_bytes_left */
-            if ((buf_pos + 5) < size) { /* read msg type and length if possible */
-                char msg_type = *((char*)buf + buf_pos);
+            if (((buf_pos + 5) <= size && zs->tx_msg_h_pos == 0) || zs->tx_msg_h_pos == 5) { /* read msg type and length if possible */
+                char msg_type;
+                if (zs->tx_msg_h_pos == 0) {
+                    msg_type = *((char*)buf + buf_pos);
+                } else {
+                    msg_type = *((char*)zs->tx_msg_h_buf);
+                }
+
                 if (msg_type  == 'm') { // random message type for test (forbid compressing r messages)
                     if (zs->is_compressing) { /* may return to this multiple times */
                         zs->c_algorithm->finish_compression(zs->c_stream);
@@ -715,11 +729,22 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
                     }
                 }
                 uint32 msg_len;
-                memcpy(&msg_len, (char*)buf + buf_pos + 1, 4);
+                if (zs->tx_msg_h_pos == 0) {
+                    memcpy(&msg_len, (char*)buf + buf_pos + 1, 4);
+                } else {
+                    memcpy(&msg_len, (char*)zs->tx_msg_h_buf + 1, 4);
+                }
                 zs->tx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
             } else {
                 /* wait for more data to come */
-                break;
+                Assert(zs->tx_msg_h_pos < 5);
+                size_t avail = size - buf_pos;
+                if (avail > (5 - zs->tx_msg_h_pos)) {
+                    avail = (5 - zs->tx_msg_h_pos);
+                }
+                memcpy((char*)zs->tx_msg_h_buf + zs->tx_msg_h_pos, (char*)buf + buf_pos, avail);
+                zs->tx_msg_h_pos += avail;
+                buf_pos += avail;
             }
         } else {
             Assert(zs->tx_pos <= zs->tx_size);
