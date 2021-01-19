@@ -668,6 +668,19 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
             }
         }
         zs->tx_pos = zs->tx_size = 0;	/* Reset pointer to the beginning of buffer */
+
+        /* try to prefetch the next message types and increase tx_msg_bytes_left, if possible */
+        while ((size - buf_pos) >= (zs->tx_msg_bytes_left + 5 - zs->tx_msg_h_pos)) {
+            char msg_type;
+            msg_type = *((char*)buf + buf_pos + zs->tx_msg_bytes_left - zs->tx_msg_h_pos);
+            if ((msg_type  == 'm' && zs->is_compressing) || (msg_type != 'm' && !zs->is_compressing)) { // random message type for test (forbid compressing r messages)
+                break; // cannot proceed further
+            }
+            uint32 msg_len;
+            memcpy(&msg_len, (char*)buf + buf_pos + zs->tx_msg_bytes_left - zs->tx_msg_h_pos + 1, 4);
+            zs->tx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
+        }
+
 		if (zs->is_compressing && (zs->tx_msg_bytes_left > 0)) {
             size_t tx_processed = 0;
             size_t buf_processed = 0;
@@ -683,6 +696,9 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
                     to_compress = zs->tx_msg_bytes_left;
                 } else {
                     to_compress = size - buf_pos;
+                }
+                if (to_compress == 0 && !zs->tx_not_flushed) {
+                    continue;
                 }
                 rc = zs->c_algorithm->compress(zs->c_stream,
                                            (char *) buf + buf_pos, to_compress, &buf_processed,
@@ -707,13 +723,9 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
             }
 		} else if (zs->tx_msg_bytes_left == 0) { /* determine next message type */
             /* try to get next msg type, then set is_compressing and tx_msg_bytes_left */
-            if (((buf_pos + 5) <= size && zs->tx_msg_h_pos == 0) || zs->tx_msg_h_pos == 5) { /* read msg type and length if possible */
+            if (zs->tx_msg_h_pos == 5) { /* read msg type and length if possible */
                 char msg_type;
-                if (zs->tx_msg_h_pos == 0) {
-                    msg_type = *((char*)buf + buf_pos);
-                } else {
-                    msg_type = *((char*)zs->tx_msg_h_buf);
-                }
+                msg_type = *((char*)zs->tx_msg_h_buf);
 
                 if (msg_type  == 'm') { // random message type for test (forbid compressing r messages)
                     if (zs->is_compressing) { /* may return to this multiple times */
@@ -729,11 +741,7 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
                     }
                 }
                 uint32 msg_len;
-                if (zs->tx_msg_h_pos == 0) {
-                    memcpy(&msg_len, (char*)buf + buf_pos + 1, 4);
-                } else {
-                    memcpy(&msg_len, (char*)zs->tx_msg_h_buf + 1, 4);
-                }
+                memcpy(&msg_len, (char*)zs->tx_msg_h_buf + 1, 4);
                 zs->tx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
             } else {
                 /* wait for more data to come */
