@@ -262,6 +262,41 @@ zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_proc
 	return ZPQ_OK;
 }
 
+static void zstd_finish_compression(void *c_stream) {
+    ZSTD_outBuffer	*output = &fp->zstd.output;
+    +		ZSTD_inBuffer	*input = &fp->zstd.input;
+    +		size_t res, cnt;
+    +
+            +		if (fp->zstd.cstream)
+        +		{
+                +			for (;;)
+                +			{
+                    +				output->pos = 0;
+                    +				res = ZSTD_compressStream2(fp->zstd.cstream, output, input, ZSTD_e_end);
+                    +				if (ZSTD_isError(res))
+                        +					fatal("could not compress data: %s", ZSTD_getErrorName(res));
+                    +				cnt = fwrite(output->dst, 1, output->pos, fp->zstd.fp);
+                    +				if (cnt != output->pos)
+                        +					fatal("could not write data: %s", strerror(errno));
+                    +				if (res == 0)
+                        +					break;
+                    +			}
+                +
+                +			ZSTD_freeCStream(fp->zstd.cstream);
+                +			pg_free(fp->zstd.output.dst);
+                +		}
+        +
+        +		if (fp->zstd.dstream)
+        +		{
+                +			ZSTD_freeDStream(fp->zstd.dstream);
+                +			pg_free(unconstify(void *, fp->zstd.input.src));
+                +		}
+        +
+        +		result = fclose(fp->zstd.fp);
+    +		fp->zstd.fp = NULL;
+    +		return result;
+}
+
 static void
 zstd_free_compressor(void *c_stream)
 {
@@ -727,7 +762,7 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
                 char msg_type;
                 msg_type = *((char*)zs->tx_msg_h_buf);
 
-                if (msg_type  == 'm') { // random message type for test (forbid compressing r messages)
+                if (msg_type  == 'D') { // random message type for test (forbid compressing r messages)
                     if (zs->is_compressing) { /* may return to this multiple times */
                         zs->c_algorithm->finish_compression(zs->c_stream);
                         continue;
