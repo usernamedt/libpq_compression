@@ -1128,6 +1128,9 @@ pqWriteReady(PGconn *conn)
  *
  * If SSL is in use, the SSL buffer is checked prior to checking the socket
  * for read data directly.
+ *
+ * If ZPQ stream is in use, the ZPQ buffer is checked prior to checking
+ * the socket for read data directly.
  */
 static int
 pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
@@ -1141,6 +1144,12 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 		printfPQExpBuffer(&conn->errorMessage,
 						  libpq_gettext("invalid socket\n"));
 		return -1;
+	}
+
+	/* check for ZPQ stream buffered read bytes */
+	if (forRead && zpq_buffered_rx(conn->zstream)) {
+        /* short-circuit the select */
+	    return 1;
 	}
 
 #ifdef USE_SSL

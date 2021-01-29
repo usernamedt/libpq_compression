@@ -1679,7 +1679,7 @@ pqGetCopyData3(PGconn *conn, char **buffer, int async)
 			if (async)
 				return 0;
 			/* Need to load more data */
-			if ((zpq_buffered_rx(conn->zstream) == 0 && pqWait(true, false, conn)) ||
+			if (pqWait(true, false, conn) ||
 				pqReadData(conn) < 0)
 				return -2;
 			continue;
@@ -1737,7 +1737,7 @@ pqGetline3(PGconn *conn, char *s, int maxlen)
 	while ((status = PQgetlineAsync(conn, s, maxlen - 1)) == 0)
 	{
 		/* need to load more data */
-		if ((zpq_buffered_rx(conn->zstream) == 0 && pqWait(true, false, conn)) ||
+		if (pqWait(true, false, conn) ||
 			pqReadData(conn) < 0)
 		{
 			*s = '\0';
@@ -1975,7 +1975,7 @@ pqFunctionCall3(PGconn *conn, Oid fnid,
 		if (needInput)
 		{
 			/* Wait for some data to arrive (or for the channel to close) */
-			if ((zpq_buffered_rx(conn->zstream) == 0 && pqWait(true, false, conn)) ||
+			if (pqWait(true, false, conn) ||
 				pqReadData(conn) < 0)
 				break;
 		}
