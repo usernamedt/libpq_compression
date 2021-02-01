@@ -6299,6 +6299,7 @@ threadRun(void *arg)
 		int			nsocks;		/* number of sockets to be waited for */
 		int64		min_usec;
 		int64		now_usec = 0;	/* set this only if needed */
+		bool        buffered_rx = false;  /* true if some of the clients has data left in SSL/ZPQ read buffers */
 
 		/*
 		 * identify which client sockets should be checked for input, and
@@ -6338,6 +6339,9 @@ threadRun(void *arg)
 				 * socket is readable
 				 */
 				int			sock = PQsocket(st->con);
+
+				/* check if conn has buffered SSL / ZPQ read data */
+                buffered_rx = buffered_rx || PQreadPending(st->con);
 
 				if (sock < 0)
 				{
@@ -6389,7 +6393,7 @@ threadRun(void *arg)
 			{
 				if (nsocks > 0)
 				{
-					rc = wait_on_socket_set(sockets, min_usec);
+					rc = buffered_rx ? 1 : wait_on_socket_set(sockets, min_usec);
 				}
 				else			/* nothing active, simple sleep */
 				{
@@ -6398,7 +6402,7 @@ threadRun(void *arg)
 			}
 			else				/* no explicit delay, wait without timeout */
 			{
-				rc = wait_on_socket_set(sockets, 0);
+				rc = buffered_rx ? 1 : wait_on_socket_set(sockets, 0);
 			}
 
 			if (rc < 0)
@@ -6437,8 +6441,7 @@ threadRun(void *arg)
 					pg_log_error("invalid socket: %s", PQerrorMessage(st->con));
 					goto done;
 				}
-
-				if (!socket_has_input(sockets, sock, nsocks++))
+                if (!PQreadPending(st->con) && !socket_has_input(sockets, sock, nsocks++))
 					continue;
 			}
 			else if (st->state == CSTATE_FINISHED ||

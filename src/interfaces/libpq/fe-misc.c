@@ -1146,20 +1146,9 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 		return -1;
 	}
 
-	/* check for ZPQ stream buffered read bytes */
-	if (forRead && zpq_buffered_rx(conn->zstream)) {
-        /* short-circuit the select */
-	    return 1;
-	}
-
-#ifdef USE_SSL
-	/* Check for SSL library buffering read bytes */
-	if (forRead && conn->ssl_in_use && pgtls_read_pending(conn))
-	{
-		/* short-circuit the select */
+	if (forRead && (pqReadPending(conn) > 0)) {
 		return 1;
 	}
-#endif
 
 	/* We will retry as long as we get EINTR */
 	do
@@ -1178,6 +1167,31 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 	return result;
 }
 
+/*
+ * Check if there is some data pending in ZPQ / SSL read buffers.
+ * Returns -1 on failure, 0 if no, 1 if yes.
+ */
+int
+pqReadPending(PGconn *conn) {
+	if (!conn)
+		return -1;
+
+	/* check for ZPQ stream buffered read bytes */
+	if (zpq_buffered_rx(conn->zstream)) {
+		/* short-circuit the select */
+		return 1;
+	}
+
+#ifdef USE_SSL
+	/* Check for SSL library buffering read bytes */
+	if (conn->ssl_in_use && pgtls_read_pending(conn))
+	{
+		/* short-circuit the select */
+		return 1;
+	}
+#endif
+	return 0;
+}
 
 /*
  * Check a file descriptor for read and/or write data, possibly waiting.
