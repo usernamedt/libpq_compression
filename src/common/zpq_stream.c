@@ -4,6 +4,11 @@
 #include "pg_config.h"
 #include "port/pg_bswap.h"
 
+/* Check if should compress provided msg_type.
+ * Return true if should, false if should not.
+ */
+#define zpq_should_compress(msg_type) (msg_type == 'd' || msg_type == 'D')
+
 /*
  * Functions implementing streaming compression algorithm
  */
@@ -505,10 +510,6 @@ static ssize_t zpq_init_decompressor(ZpqStream *zs, int d_alg_impl) {
     return 0;
 }
 
-static bool zpq_should_compress(ZpqStream * zs, char msg_type) {
-    return msg_type == 'd' || msg_type == 'D'; // random message type for test (compress only D and d messages)
-}
-
 static ssize_t zpq_compress(ZpqStream * zs, void const *src, size_t src_size, size_t *src_processed){
     if (zs->is_compressing){
         size_t tx_processed;
@@ -718,7 +719,7 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
         while ((zs->tx_msg_bytes_left > 0) && ((size - buf_pos) >= (zs->tx_msg_bytes_left + 5 - zs->tx_msg_h_size))) {
             char msg_type;
             msg_type = *((char*)buf + buf_pos + zs->tx_msg_bytes_left - zs->tx_msg_h_size);
-            if (zpq_should_compress(zs, msg_type) != zs->is_compressing) {
+            if (zpq_should_compress(msg_type) != zs->is_compressing) {
                 break; // cannot proceed further
             }
             uint32 msg_len;
@@ -765,7 +766,7 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
                 char msg_type;
                 msg_type = *((char*)zs->tx_msg_h_buf);
 
-                if (zpq_should_compress(zs, msg_type)) {
+                if (zpq_should_compress(msg_type)) {
                     if (!zs->is_compressing) {
                         Assert(zs->tx_size < ZPQ_BUFFER_SIZE);
                         *((char *) zs->tx_buf + zs->tx_size) = 'm';
