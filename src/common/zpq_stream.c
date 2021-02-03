@@ -682,7 +682,8 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed)
          */
     } while (buf_pos < size || zs->tx_not_flushed);
 
-    return buf_pos;
+    *processed = buf_pos;
+    return ZPQ_OK;
 }
 
 void
@@ -899,24 +900,24 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
 
     while (buf_pos == 0)
     {
+        if (zc->rx_msg_bytes_left > 0 && zc->rx_msg_h_size > 0) {
+            size_t copy_len = zc->rx_msg_h_size;
+            if ((size - buf_pos) < copy_len) {
+                copy_len = size - buf_pos;
+            }
+            memcpy(buf, (char *) zc->rx_msg_h_buf + 5 - zc->rx_msg_h_size, copy_len);
+            zc->rx_msg_bytes_left -= copy_len;
+            zc->rx_msg_h_size -= copy_len;
+            buf_pos += copy_len;
+        }
+
         if (zc->is_decompressing && zc->rx_msg_bytes_left > 0) {
-            if (zc->rx_msg_h_size > 0) {
-                size_t copy_len = zc->rx_msg_h_size;
-                if ((size - buf_pos) < copy_len) {
-                    copy_len = size - buf_pos;
-                }
-                memcpy(buf, (char *) zc->rx_msg_h_buf + 5 - zc->rx_msg_h_size, copy_len);
-                zc->rx_msg_bytes_left -= copy_len;
-                zc->rx_msg_h_size -= copy_len;
-                buf_pos += copy_len;
-            } else {
-                rc = zpq_read(zc->zs, (char*)buf + buf_pos, size - buf_pos);
-                if (rc > 0) {
-                    buf_pos += rc;
-                    zc->rx_msg_bytes_left -= rc;
-                } else { /* read failed */
-                    return rc;
-                }
+            rc = zpq_read(zc->zs, (char*)buf + buf_pos, size - buf_pos);
+            if (rc > 0) {
+                buf_pos += rc;
+                zc->rx_msg_bytes_left -= rc;
+            } else { /* read failed */
+                return rc;
             }
         } else if (zc->rx_msg_bytes_left == 0) {  /* determine next message type */
             /* try to get next msg type, then set is_decompressing and rx_msg_bytes_left */
