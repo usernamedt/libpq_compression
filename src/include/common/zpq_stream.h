@@ -20,6 +20,9 @@
 struct ZpqStream;
 typedef struct ZpqStream ZpqStream;
 
+struct ZpqController;
+typedef struct ZpqController ZpqController;
+
 typedef ssize_t (*zpq_tx_func) (void *arg, void const *data, size_t size);
 typedef ssize_t (*zpq_rx_func) (void *arg, void *data, size_t size);
 
@@ -92,3 +95,39 @@ extern char const *zpq_decompress_algorithm_name(ZpqStream * zs);
 extern char	  **zpq_get_supported_algorithms(void);
 
 #endif
+
+extern ZpqController *zpq_c_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char *rx_data, size_t rx_data_size);
+
+extern ssize_t zpq_c_write(ZpqController * zq, void const *buf, size_t size, size_t *processed);
+
+extern ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size);
+
+/*
+ * Return an estimated amount of data in internal rx decompression buffer.
+ */
+extern size_t		zpq_c_buffered_rx(ZpqController * zc);
+
+/*
+ * Return an estimated amount of data in internal tx compression buffer.
+ */
+extern size_t		zpq_c_buffered_tx(ZpqController * zc);
+
+/*
+ * Free stream created by zpq_create function.
+ */
+extern void		zpq_c_free(ZpqController * zc);
+
+/*
+ * Get decompressor error message.
+ */
+extern char const *zpq_c_decompress_error(ZpqController * zc);
+
+/*
+ * Get compressor error message.
+ */
+extern char const *zpq_c_compress_error(ZpqController * zc);
+
+/*
+ * Get the name of chosen compression algorithm.
+ */
+extern char const *zpq_c_compress_algorithm_name(ZpqController * zc);

@@ -65,8 +65,8 @@ static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time);
  * Use zpq_read if compression is switched on
  */
 #define pq_read_conn(conn)												\
-	(conn->zstream														\
-	 ? zpq_read(conn->zstream, conn->inBuffer + conn->inEnd,			\
+	(conn->zStreamController														\
+	 ? zpq_c_read(conn->zStreamController, conn->inBuffer + conn->inEnd,			\
 				conn->inBufSize - conn->inEnd)							\
 	 : pqsecure_read(conn, conn->inBuffer + conn->inEnd,				\
 					 conn->inBufSize - conn->inEnd))
@@ -683,7 +683,7 @@ retry3:
 		{
 			printfPQExpBuffer(&conn->errorMessage,
                               libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zstream));
+                              zpq_c_decompress_error(conn->zStreamController));
 			return -1;
 		}
 
@@ -786,7 +786,7 @@ retry4:
 		{
 			printfPQExpBuffer(&conn->errorMessage,
                               libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zstream));
+                              zpq_c_decompress_error(conn->zStreamController));
 			return -1;
 		}
 
@@ -902,15 +902,15 @@ pqSendSome(PGconn *conn, int len)
 	}
 
 	/* while there's still data to send */
-	while (len > 0 || zpq_buffered_tx(conn->zstream))
+	while (len > 0 || zpq_c_buffered_tx(conn->zStreamController))
 	{
 		int			sent;
 		size_t      processed = 0;
         /*
 		 * Use zpq_write if compression is switched on
 		 */
-		sent = conn->zstream
-			? zpq_write(conn->zstream, ptr, len, &processed)
+		sent = conn->zStreamController
+			? zpq_c_write(conn->zStreamController, ptr, len, &processed)
 #ifndef WIN32
 			: pqsecure_write(conn, ptr, len);
 #else
@@ -978,7 +978,7 @@ pqSendSome(PGconn *conn, int len)
 			remaining -= sent;
 		}
 
-		if (len > 0 || sent < 0 || zpq_buffered_tx(conn->zstream))
+		if (len > 0 || sent < 0 || zpq_c_buffered_tx(conn->zStreamController))
 		{
 			/*
 			 * We didn't send it all, wait till we can send more.
@@ -1177,7 +1177,7 @@ pqReadPending(PGconn *conn) {
 		return -1;
 
 	/* check for ZPQ stream buffered read bytes */
-	if (zpq_buffered_rx(conn->zstream)) {
+	if (zpq_c_buffered_rx(conn->zStreamController)) {
 		/* short-circuit the select */
 		return 1;
 	}

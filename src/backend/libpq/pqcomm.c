@@ -146,7 +146,7 @@ static char PqRecvBuffer[PQ_RECV_BUFFER_SIZE];
 static int	PqRecvPointer;		/* Next index to read a byte from PqRecvBuffer */
 static int	PqRecvLength;		/* End of data available in PqRecvBuffer */
 
-static ZpqStream * PqStream;
+static ZpqController * PqController;
 
 
 /*
@@ -289,8 +289,8 @@ SendCompressionAck:
 
 		if (index >= 0)			/* Use compression */
 		{
-			PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort, NULL, 0);
-			if (!PqStream)
+            PqController = zpq_c_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort, NULL, 0);
+			if (!PqController)
 			{
 				ereport(LOG,
 						(errmsg("Failed to initialize compressor %s", server_compression_algorithms[impl])));
@@ -398,7 +398,7 @@ socket_close(int code, Datum arg)
 #endif							/* ENABLE_GSS || ENABLE_SSPI */
 
 		/* Release compression streams */
-		zpq_free(PqStream);
+		zpq_c_free(PqController);
 
 		/*
 		 * Cleanly shut down SSL layer.  Nowhere else does a postmaster child
@@ -1072,8 +1072,8 @@ pq_recvbuf(bool nowait)
 		 * If streaming compression is enabled then use correspondent
 		 * compression read function.
 		 */
-		r = PqStream
-			? zpq_read(PqStream, PqRecvBuffer + PqRecvLength,
+		r = PqController
+			? zpq_c_read(PqController, PqRecvBuffer + PqRecvLength,
 					   PQ_RECV_BUFFER_SIZE - PqRecvLength)
 			: secure_read(MyProcPort, PqRecvBuffer + PqRecvLength,
 						  PQ_RECV_BUFFER_SIZE - PqRecvLength);
@@ -1082,7 +1082,7 @@ pq_recvbuf(bool nowait)
 		{
 			if (r == ZPQ_DECOMPRESS_ERROR)
 			{
-				char const *msg = zpq_decompress_error(PqStream);
+				char const *msg = zpq_c_decompress_error(PqController);
 
 				if (msg == NULL)
 					msg = "end of stream";
@@ -1528,7 +1528,7 @@ internal_flush(void)
 	char	   *bufptr = PqSendBuffer + PqSendStart;
 	char	   *bufend = PqSendBuffer + PqSendPointer;
 
-	while (bufptr < bufend || zpq_buffered_tx(PqStream) != 0)
+	while (bufptr < bufend || zpq_c_buffered_tx(PqController) != 0)
 
 		/*
 		 * has more data to flush or unsent data in internal compression
@@ -1539,8 +1539,8 @@ internal_flush(void)
 		size_t		processed = 0;
 		size_t		available = bufend - bufptr;
 
-		r = PqStream
-			? zpq_write(PqStream, bufptr, available, &processed)
+		r = PqController
+			? zpq_c_write(PqController, bufptr, available, &processed)
 			: secure_write(MyProcPort, bufptr, available);
 		bufptr += processed;
 		PqSendStart += processed;
@@ -1610,7 +1610,7 @@ socket_flush_if_writable(void)
 	int			res;
 
 	/* Quick exit if nothing to do */
-	if ((PqSendPointer == PqSendStart) && (zpq_buffered_tx(PqStream) == 0))
+	if ((PqSendPointer == PqSendStart) && (zpq_c_buffered_tx(PqController) == 0))
 		return 0;
 
 	/* No-op if reentrant call */
@@ -1633,7 +1633,7 @@ socket_flush_if_writable(void)
 static bool
 socket_is_send_pending(void)
 {
-	return (PqSendStart < PqSendPointer || (zpq_buffered_tx(PqStream) != 0));
+	return (PqSendStart < PqSendPointer || (zpq_c_buffered_tx(PqController) != 0));
 }
 
 /* --------------------------------
@@ -2117,7 +2117,7 @@ PG_FUNCTION_INFO_V1(pg_compression_algorithm);
 Datum
 pg_compression_algorithm(PG_FUNCTION_ARGS)
 {
-	char const *algorithm_name = PqStream ? zpq_compress_algorithm_name(PqStream) : NULL;
+	char const *algorithm_name = PqController ? zpq_c_compress_algorithm_name(PqController) : NULL;
 
 	if (algorithm_name)
 		PG_RETURN_TEXT_P(cstring_to_text(algorithm_name));
