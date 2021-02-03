@@ -37,7 +37,7 @@ typedef ssize_t (*zpq_rx_func) (void *arg, void *data, size_t size);
  * rx_data: received data (compressed data already fetched from input stream)
  * rx_data_size: size of data fetched from input stream
  */
-extern ZpqStream  *zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, void *arg);
+extern ZpqStream  *zpq_create(int c_alg_impl, int c_level, int d_alg_impl);
 
 /*
  * Read up to "size" raw (decompressed) bytes.
@@ -52,7 +52,7 @@ extern ssize_t		zpq_read(ZpqStream * zs, void const *src, size_t src_size, size_
  * Error code is either ZPQ_COMPRESS_ERROR or error code returned by the tx function.
  * In the last case number of bytes written is stored in *processed.
  */
-extern ssize_t		zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed);
+extern ssize_t		zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed, void *dst, size_t dst_size, size_t *dst_processed);
 
 /*
  * Get decompressor error message.
