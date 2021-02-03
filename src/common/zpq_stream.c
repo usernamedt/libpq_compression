@@ -889,7 +889,12 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
                 Assert(zc->readahead_pos <= zc->readahead_size);
                 rx_processed = 0;
                 buf_processed = 0;
-                rc = zpq_read(zc->zs, (char*)zc->readahead_buf + zc->readahead_pos, zc->rx_msg_bytes_left, &rx_processed,
+
+                size_t read_count = zc->rx_msg_bytes_left;
+                if (zc->readahead_size - zc->readahead_pos < read_count) {
+                    read_count = ZPQ_BUFFER_SIZE - zc->readahead_size;
+                }
+                rc = zpq_read(zc->zs, (char*)zc->readahead_buf + zc->readahead_pos, read_count, &rx_processed,
                               buf, size, &buf_processed);
                 zc->readahead_pos += rx_processed;
                 buf_pos += buf_processed;
