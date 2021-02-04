@@ -586,7 +586,7 @@ zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed, void 
     }
     if (rc != ZPQ_OK)
     {
-        return rc;
+        return ZPQ_COMPRESS_ERROR;
     }
 
     return ZPQ_OK;
@@ -719,25 +719,29 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
     size_t		buf_pos = 0;
     ssize_t		rc;
 
-    /* send all pending data */
-    while (zc->compressed_pos < zc->compressed_size)
-    {
-        rc = zc->tx_func(zc->arg, (char *) zc->compressed_buf + zc->compressed_pos, zc->compressed_size - zc->compressed_pos);
-
-        if (rc > 0)
-        {
-            zc->compressed_pos += rc;
-        }
-        else
-        {
-            *processed = buf_pos;
-            return rc;
-        }
-    }
-    zc->compressed_pos = zc->compressed_size = 0; /* Reset pointer to the beginning of buffer */
-
     do
     {
+        /* send all pending data */
+        while (zc->compressed_pos < zc->compressed_size)
+        {
+            rc = zc->tx_func(zc->arg, (char *) zc->compressed_buf + zc->compressed_pos, zc->compressed_size - zc->compressed_pos);
+
+            if (rc > 0)
+            {
+                zc->compressed_pos += rc;
+            }
+            else
+            {
+                *processed = buf_pos;
+                return rc;
+            }
+        }
+        zc->compressed_pos = zc->compressed_size = 0; /* Reset pointer to the beginning of buffer */
+
+        if (!zpq_c_buffered_tx(zc) && size - buf_pos == 0) {
+            continue; /* don't have anything to process, skip */
+        }
+
         /* try to prefetch the next message types and increase tx_msg_bytes_left, if possible */
         while ((zc->tx_msg_bytes_left > 0) && ((size - buf_pos) >= (zc->tx_msg_bytes_left + 5 - zc->tx_msg_h_size))) {
             char msg_type;
@@ -750,7 +754,7 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
             zc->tx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
         }
 
-        if (zc->is_compressing && (zc->tx_msg_bytes_left > 0 || zpq_buffered_tx(zc->zs))) {
+        if (zpq_buffered_tx(zc->zs) || (zc->is_compressing && zc->tx_msg_bytes_left > 0)) {
             size_t buf_processed = 0;
             ssize_t to_compress;
 
@@ -872,7 +876,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
                 zc->readahead_pos = zc->readahead_size = 0; /* Reset rx buffer */
         }
 
-        if (zc->readahead_pos == zc->readahead_size && !zpq_buffered_rx(zc->zs)) {
+        if ((zc->readahead_pos == zc->readahead_size || (zc->readahead_size - zc->readahead_pos < 5 && zc->rx_msg_bytes_left == 0))&& !zpq_buffered_rx(zc->zs)) {
             rc = zc->rx_func(zc->arg, (char*)zc->readahead_buf + zc->readahead_size, ZPQ_BUFFER_SIZE - zc->readahead_size);
             if (rc > 0) /* read fetches some data */
             {
@@ -892,7 +896,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
 
                 size_t read_count = zc->rx_msg_bytes_left;
                 if (zc->readahead_size - zc->readahead_pos < read_count) {
-                    read_count = ZPQ_BUFFER_SIZE - zc->readahead_size;
+                    read_count = zc->readahead_size - zc->readahead_pos;
                 }
                 rc = zpq_read(zc->zs, (char*)zc->readahead_buf + zc->readahead_pos, read_count, &rx_processed,
                               buf, size, &buf_processed);
