@@ -876,7 +876,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
                 zc->readahead_pos = zc->readahead_size = 0; /* Reset rx buffer */
         }
 
-        if ((zc->readahead_pos == zc->readahead_size || (zc->readahead_size - zc->readahead_pos < 5 && zc->rx_msg_bytes_left == 0))&& !zpq_buffered_rx(zc->zs)) {
+        if (!zpq_c_buffered_rx(zc)) {
             rc = zc->rx_func(zc->arg, (char*)zc->readahead_buf + zc->readahead_size, ZPQ_BUFFER_SIZE - zc->readahead_size);
             if (rc > 0) /* read fetches some data */
             {
@@ -943,7 +943,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
 }
 
 size_t zpq_c_buffered_rx(ZpqController * zc) {
-    return zc ? zc->readahead_size - zc->readahead_pos > 5 || (zc->readahead_size - zc->readahead_pos > 0 && zc->rx_msg_bytes_left > 0) || zpq_buffered_rx(zc->zs) : 0;
+    return zc ? zc->readahead_size - zc->readahead_pos >= 5 || (zc->readahead_size - zc->readahead_pos > 0 && zc->rx_msg_bytes_left > 0) || zpq_buffered_rx(zc->zs) : 0;
 }
 
 size_t zpq_c_buffered_tx(ZpqController * zc) {
