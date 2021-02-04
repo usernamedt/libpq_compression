@@ -888,6 +888,19 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
             }
         }
 
+        /* try to prefetch the next message types and increase rx_msg_bytes_left, if possible */
+        while (zc->rx_msg_bytes_left > 0 && (zc->readahead_size - zc->readahead_pos >= zc->rx_msg_bytes_left + 5)) {
+            char msg_type;
+            msg_type = *((char*)zc->readahead_buf + zc->readahead_pos + zc->rx_msg_bytes_left);
+            if (zc->is_decompressing || zc_should_decompress(msg_type)) {
+                break; // cannot proceed further
+            }
+            uint32 msg_len;
+            memcpy(&msg_len, (char*)zc->readahead_buf + zc->readahead_pos + zc->rx_msg_bytes_left + 1, 4);
+            zc->rx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
+        }
+
+
         if (zc->rx_msg_bytes_left > 0 || zpq_buffered_rx(zc->zs)) {
             if (zc->is_decompressing || zpq_buffered_rx(zc->zs)) {
                 Assert(zc->readahead_pos <= zc->readahead_size);
