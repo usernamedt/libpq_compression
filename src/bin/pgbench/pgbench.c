@@ -6441,7 +6441,9 @@ threadRun(void *arg)
 					pg_log_error("invalid socket: %s", PQerrorMessage(st->con));
 					goto done;
 				}
-                if (!PQreadPending(st->con) && !socket_has_input(sockets, sock, nsocks++))
+                if (PQreadPending(st->con)) {
+                    nsocks++;
+                } else if (!socket_has_input(sockets, sock, nsocks++))
 					continue;
 			}
 			else if (st->state == CSTATE_FINISHED ||
