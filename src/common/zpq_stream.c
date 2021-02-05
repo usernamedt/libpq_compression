@@ -732,7 +732,7 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
     do
     {
         /* send all pending data */
-        while (zc->tx_pos < zc->tx_size)
+        while (!(ZPQ_BUFFER_SIZE - zc->tx_size > 10 && (size - buf_pos > 0 || zpq_buffered_tx(zc->zs))) && zc->tx_pos < zc->tx_size)
         {
             rc = zc->tx_func(zc->arg, (char *) zc->tx_buf + zc->tx_pos, zc->tx_size - zc->tx_pos);
 
@@ -746,7 +746,9 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
                 return rc;
             }
         }
-        zc->tx_pos = zc->tx_size = 0; /* Reset pointer to the beginning of buffer */
+        if (zc->tx_pos == zc->tx_size) {
+            zc->tx_pos = zc->tx_size = 0; /* Reset pointer to the beginning of buffer */
+        }
 
         if (!zpq_c_buffered_tx(zc) && size - buf_pos == 0) {
             continue; /* don't have anything to process, skip */
