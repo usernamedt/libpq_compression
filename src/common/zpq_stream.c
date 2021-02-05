@@ -916,7 +916,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
                 }
                 rc = zpq_read(zc->zs, (char*)zc->readahead_buf + zc->readahead_pos, read_count, &rx_processed,
                               buf, size, &buf_processed);
-                printf("decompressed compr %zu raw %zu", rx_processed, buf_processed);
+                printf("decompressed compr %zu raw %zu\n", rx_processed, buf_processed);
                 fflush(stdout);
                 zc->readahead_pos += rx_processed;
                 buf_pos += buf_processed;
@@ -951,7 +951,7 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
             zc->rx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
 
             if (zc->is_decompressing) {
-                printf("recv compressed msg, len %zu", zc->rx_msg_bytes_left);
+                printf("recv compressed msg, len %zu\n", zc->rx_msg_bytes_left);
                 fflush(stdout);
                 /* compressed message header is no longer needed, just skip it */
                 zc->readahead_pos += 5;
