@@ -132,9 +132,9 @@ struct ZpqController {
     size_t		readahead_pos;
     size_t      readahead_size;
 
-    char		compressed_buf[ZPQ_BUFFER_SIZE];
-    size_t		compressed_pos;
-    size_t		compressed_size;
+    char		tx_buf[ZPQ_BUFFER_SIZE];
+    size_t		tx_pos;
+    size_t		tx_size;
 
     zpq_rx_func rx_func;
     zpq_tx_func tx_func;
@@ -677,8 +677,8 @@ zpq_c_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, z
     Assert(rx_data_size < ZPQ_BUFFER_SIZE);
     memcpy(zc->readahead_buf, rx_data, rx_data_size);
 
-    zc->compressed_pos = 0;
-    zc->compressed_size = 0;
+    zc->tx_pos = 0;
+    zc->tx_size = 0;
 
     zc->rx_func = rx_func;
     zc->tx_func = tx_func;
@@ -694,7 +694,7 @@ zpq_c_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, z
 
 static ssize_t zpq_c_compress(ZpqController * zc, char const *src, size_t src_size, size_t *src_processed){
     /* check if have some space */
-    if (ZPQ_BUFFER_SIZE - zc->compressed_size <= 5) {
+    if (ZPQ_BUFFER_SIZE - zc->tx_size <= 5) {
         /* too little space for compressed message, just return */
         *src_processed = 0;
         return ZPQ_OK;
@@ -702,17 +702,27 @@ static ssize_t zpq_c_compress(ZpqController * zc, char const *src, size_t src_si
 
     size_t compressed_len;
     ssize_t rc = zpq_write(zc->zs, src, src_size, src_processed,
-                           (char *) zc->compressed_buf + zc->compressed_size + 5, ZPQ_BUFFER_SIZE - zc->compressed_size - 5, &compressed_len);
+                           (char *) zc->tx_buf + zc->tx_size + 5, ZPQ_BUFFER_SIZE - zc->tx_size - 5, &compressed_len);
 
     if (compressed_len > 0) {
-        *((char *) zc->compressed_buf + zc->compressed_size) = 'm'; /* write compressed message type */
+        *((char *) zc->tx_buf + zc->tx_size) = 'm'; /* write compressed message type */
         uint32 size = pg_hton32(compressed_len + 4);
-        memcpy((char *) zc->compressed_buf + zc->compressed_size + 1, &size, sizeof(uint32)); /* write compressed message length */
+        memcpy((char *) zc->tx_buf + zc->tx_size + 1, &size, sizeof(uint32)); /* write compressed message length */
         compressed_len += 5;
     }
 
-    zc->compressed_size += compressed_len;
+    zc->tx_size += compressed_len;
     return rc;
+}
+
+static void zpq_c_write_raw(ZpqController * zc, char const *src, size_t src_size, size_t *src_processed) {
+    size_t copy_len = src_size;
+    if ((ZPQ_BUFFER_SIZE - zc->tx_size) < copy_len) {
+        copy_len = ZPQ_BUFFER_SIZE - zc->tx_size;
+    }
+    memcpy((char*)zc->tx_buf + zc->tx_size, src, copy_len);
+    zc->tx_size += copy_len;
+    *src_processed = copy_len;
 }
 
 ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *processed) {
@@ -722,13 +732,13 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
     do
     {
         /* send all pending data */
-        while (!(ZPQ_BUFFER_SIZE - zc->compressed_size > 10 && (size - buf_pos > 0 || zpq_buffered_tx(zc->zs))) && zc->compressed_pos < zc->compressed_size)
+        while (zc->tx_pos < zc->tx_size)
         {
-            rc = zc->tx_func(zc->arg, (char *) zc->compressed_buf + zc->compressed_pos, zc->compressed_size - zc->compressed_pos);
+            rc = zc->tx_func(zc->arg, (char *) zc->tx_buf + zc->tx_pos, zc->tx_size - zc->tx_pos);
 
             if (rc > 0)
             {
-                zc->compressed_pos += rc;
+                zc->tx_pos += rc;
             }
             else
             {
@@ -736,7 +746,7 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
                 return rc;
             }
         }
-        zc->compressed_pos = zc->compressed_size = 0; /* Reset pointer to the beginning of buffer */
+        zc->tx_pos = zc->tx_size = 0; /* Reset pointer to the beginning of buffer */
 
         if (!zpq_c_buffered_tx(zc) && size - buf_pos == 0) {
             continue; /* don't have anything to process, skip */
@@ -816,35 +826,20 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
             }
         } else {
             size_t copy_size = zc->tx_msg_bytes_left;
-            ssize_t copy_rc;
+            size_t copy_rc = 0;
             if (zc->tx_msg_h_size > 0)
             {
                 if (zc->tx_msg_h_size < copy_size) {
                     copy_size = zc->tx_msg_h_size;
                 }
-                copy_rc = zc->tx_func(zc->arg, (char *) zc->tx_msg_h_buf + 5 - zc->tx_msg_h_size, copy_size);
-
-                if (copy_rc > 0)
-                {
-                    zc->tx_msg_h_size -= copy_rc;
-                }
-                else
-                {
-                    *processed = buf_pos;
-                    return copy_rc;
-                }
+                zpq_c_write_raw(zc, (char *) zc->tx_msg_h_buf + 5 - zc->tx_msg_h_size, copy_size, &copy_rc);
+                zc->tx_msg_h_size -= copy_rc;
             } else {
                 if ((size - buf_pos) < copy_size) {
                     copy_size = size - buf_pos;
                 }
-                copy_rc = zc->tx_func(zc->arg, (char*)buf + buf_pos, copy_size);
-                if (copy_rc > 0){
-                    buf_pos += copy_rc;
-                }
-                else {
-                    *processed = buf_pos;
-                    return copy_rc;
-                }
+                zpq_c_write_raw(zc, (char*)buf + buf_pos, copy_size, &copy_rc);
+                buf_pos += copy_rc;
             }
             zc->tx_msg_bytes_left -= copy_rc;
         }
@@ -967,7 +962,7 @@ size_t zpq_c_buffered_rx(ZpqController * zc) {
 }
 
 size_t zpq_c_buffered_tx(ZpqController * zc) {
-    return zc ? zc->tx_msg_h_size == 5 || (zc->tx_msg_h_size > 0 && zc->tx_msg_bytes_left > 0) || zc->compressed_size - zc->compressed_pos > 0 || zpq_buffered_tx(zc->zs) : 0;
+    return zc ? zc->tx_msg_h_size == 5 || (zc->tx_msg_h_size > 0 && zc->tx_msg_bytes_left > 0) || zc->tx_size - zc->tx_pos > 0 || zpq_buffered_tx(zc->zs) : 0;
 }
 
 void
