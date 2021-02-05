@@ -93,7 +93,7 @@ typedef struct
 }			ZpqAlgorithm;
 
 
-#define ZPQ_BUFFER_SIZE       8192	/* We have to flush stream after each
+#define ZPQ_BUFFER_SIZE       81920	/* We have to flush stream after each
 									 * protocol command and command is mostly
 									 * limited by record length, which in turn
 									 * is usually less than page size (except
