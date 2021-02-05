@@ -7,7 +7,7 @@
 /* Check if should compress provided msg_type.
  * Return true if should, false if should not.
  */
-#define zc_should_compress(msg_type, msg_len) (msg_len > 200)
+#define zc_should_compress(msg_type, msg_len) (msg_len > 100)
 
 #define zc_should_decompress(msg_type) (msg_type == 'm')
 
