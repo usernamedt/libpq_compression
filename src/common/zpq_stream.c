@@ -599,10 +599,14 @@ zpq_free(ZpqStream * zs)
 	{
 		if (zs->c_stream)
 		{
+		    printf("[debug] compressed stats: tx_total %zu tx_total_raw %zu\n", zs->tx_total, zs->tx_total_raw);
+		    fflush(stdout);
 			zs->c_algorithm->free_compressor(zs->c_stream);
 		}
 		if (zs->d_stream)
 		{
+            printf("[debug] decompressed stats: rx_total %zu rx_total_raw %zu\n", zs->rx_total, zs->rx_total_raw);
+            fflush(stdout);
 			zs->d_algorithm->free_decompressor(zs->d_stream);
 		}
 		free(zs);
@@ -913,8 +917,6 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
                 }
                 rc = zpq_read(zc->zs, (char*)zc->readahead_buf + zc->readahead_pos, read_count, &rx_processed,
                               buf, size, &buf_processed);
-                printf("decompressed_debug decompressed compr %zu raw %zu\n", rx_processed, buf_processed);
-                fflush(stdout);
                 zc->readahead_pos += rx_processed;
                 buf_pos += buf_processed;
                 zc->rx_msg_bytes_left -= rx_processed;
@@ -948,8 +950,6 @@ ssize_t zpq_c_read(ZpqController * zc, void *buf, size_t size) {
             zc->rx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
 
             if (zc->is_decompressing) {
-                printf("decompressed_debug recv compressed msg, len %zu\n", zc->rx_msg_bytes_left);
-                fflush(stdout);
                 /* compressed message header is no longer needed, just skip it */
                 zc->readahead_pos += 5;
                 zc->rx_msg_bytes_left -= 5;
