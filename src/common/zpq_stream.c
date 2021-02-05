@@ -7,7 +7,7 @@
 /* Check if should compress provided msg_type.
  * Return true if should, false if should not.
  */
-#define zc_should_compress(msg_type) (msg_type == 'd' || msg_type == 'D')
+#define zc_should_compress(msg_type, msg_len) (msg_len > 100 && (msg_type == 'd' || msg_type == 'D'))
 
 #define zc_should_decompress(msg_type) (msg_type == 'm')
 
@@ -746,12 +746,13 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
         while ((zc->tx_msg_bytes_left > 0) && ((size - buf_pos) >= (zc->tx_msg_bytes_left + 5 - zc->tx_msg_h_size))) {
             char msg_type;
             msg_type = *((char*)buf + buf_pos + zc->tx_msg_bytes_left - zc->tx_msg_h_size);
-            if (zc_should_compress(msg_type) != zc->is_compressing) {
-                break; // cannot proceed further
-            }
             uint32 msg_len;
             memcpy(&msg_len, (char*)buf + buf_pos + zc->tx_msg_bytes_left - zc->tx_msg_h_size + 1, 4);
-            zc->tx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
+            msg_len = pg_ntoh32(msg_len);
+            if (zc_should_compress(msg_type, msg_len) != zc->is_compressing) {
+                break; // cannot proceed further
+            }
+            zc->tx_msg_bytes_left += msg_len + 1;
         }
 
         if (zpq_buffered_tx(zc->zs) || (zc->is_compressing && zc->tx_msg_bytes_left > 0)) {
@@ -782,10 +783,14 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
             if (zc->tx_msg_h_size == 5) { /* read msg type and length if possible */
                 char msg_type;
                 msg_type = *((char*)zc->tx_msg_h_buf);
+                uint32 msg_len;
+                memcpy(&msg_len, (char*)zc->tx_msg_h_buf + 1, 4);
+                msg_len = pg_ntoh32(msg_len);
 
-                if (zc_should_compress(msg_type)) {
+                if (zc_should_compress(msg_type, msg_len)) {
                     zc->is_compressing = true;
-                } else { // random message type for test (forbid compressing non-d messages)
+                } else {
+                    // random message type for test (forbid compressing non-d messages)
                     if (zc->is_compressing) { /* may return to this multiple times */
                         while (zpq_buffered_tx(zc->zs)) {
                             size_t flush_processed = 0;
@@ -797,9 +802,7 @@ ssize_t zpq_c_write(ZpqController * zc, void const *buf, size_t size, size_t *pr
                         zc->is_compressing = false;
                     }
                 }
-                uint32 msg_len;
-                memcpy(&msg_len, (char*)zc->tx_msg_h_buf + 1, 4);
-                zc->tx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
+                zc->tx_msg_bytes_left = msg_len + 1;
             } else {
                 /* wait for more data to come */
                 Assert(zc->tx_msg_h_size < 5);
