@@ -78,6 +78,7 @@ OBJS_COMMON = \
 	username.o \
 	wait_error.o \
 	wchar.o \
+	z_stream.o \
 	zpq_stream.o
 
 ifeq ($(with_openssl),yes)

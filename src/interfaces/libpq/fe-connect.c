@@ -464,8 +464,8 @@ void
 pqDropConnection(PGconn *conn, bool flushInput)
 {
 	/* Release compression streams */
-	zpq_c_free(conn->zStreamController);
-	conn->zStreamController = NULL;
+    zpq_free(conn->zpqStream);
+	conn->zpqStream = NULL;
 
 	/* Drop any SSL state */
 	pqsecure_close(conn);
@@ -3270,15 +3270,17 @@ keep_going:						/* We will come back to here until there is
 											  index);
 							goto error_return;
 						}
-						Assert(!conn->zStreamController);
-						conn->zStreamController = zpq_c_create(conn->compressors[index].impl,
-                                                             conn->compressors[index].level,
-                                                             conn->compressors[index].impl,
-                                                             (zpq_tx_func)pqsecure_write, (zpq_rx_func)pqsecure_read, conn,
-                                                             &conn->inBuffer[conn->inCursor], conn->inEnd-conn->inCursor);
-						if (!conn->zStreamController)
+						Assert(!conn->zpqStream);
+						conn->zpqStream = zpq_create(conn->compressors[index].impl,
+                                                     conn->compressors[index].level,
+                                                     conn->compressors[index].impl,
+                                                     (zpq_tx_func) pqsecure_write, (zpq_rx_func) pqsecure_read,
+                                                     conn,
+                                                     &conn->inBuffer[conn->inCursor],
+                                                             conn->inEnd - conn->inCursor);
+						if (!conn->zpqStream)
 						{
-							char** supported_algorithms = zpq_get_supported_algorithms();
+							char** supported_algorithms = zs_get_supported_algorithms();
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext(
 												  "failed to initialize compressor %s\n"),

@@ -547,7 +547,7 @@ struct pg_conn
 	PQExpBufferData workBuffer; /* expansible string */
 
 	/* Compression stream */
-	ZpqController *zStreamController;
+	ZpqStream *zpqStream;
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this

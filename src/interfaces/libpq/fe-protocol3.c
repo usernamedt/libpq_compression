@@ -2148,7 +2148,7 @@ pqBuildStartupPacket3(PGconn *conn, int *packetlen,
 static bool
 build_compressors_list(PGconn *conn, char** client_compressors, bool build_descriptors)
 {
-	char** supported_algorithms = zpq_get_supported_algorithms();
+	char** supported_algorithms = zs_get_supported_algorithms();
 	char* value = conn->compression;
 	int n_supported_algorithms;
 	int total_len = 0;
