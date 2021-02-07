@@ -8,7 +8,7 @@
 /* Check if should compress provided msg_type.
  * Return true if should, false if should not.
  */
-#define zpq_should_compress(msg_type, msg_len) (msg_len > 30)
+#define zpq_should_compress(msg_type, msg_len) (msg_len > 60)
 
 #define zpq_should_decompress(msg_type) (msg_type == 'm')
 
