@@ -541,12 +541,13 @@ zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, v
 		zs->rx_not_flushed = true;
 		return ZS_OK;
 	}
-	if (rc != ZS_OK)
+
+	if (rc != ZS_OK && rc != ZS_STREAM_END)
 	{
-		return rc;
+		return ZS_DECOMPRESS_ERROR;
 	}
 
-	return ZS_OK;
+	return rc;
 }
 
 ssize_t
@@ -570,7 +571,7 @@ zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *ds
 		return ZS_COMPRESS_ERROR;
 	}
 
-	return ZS_OK;
+	return rc;
 }
 
 void
