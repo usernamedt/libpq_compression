@@ -462,7 +462,7 @@ extern PGPing PQpingParams(const char *const *keywords,
 extern int	PQflush(PGconn *conn);
 
 extern int
-PQreadPending(PGconn *conn);
+			PQreadPending(PGconn *conn);
 
 /*
  * "Fast path" interface --- not really recommended for application

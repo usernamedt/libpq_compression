@@ -33,7 +33,7 @@ typedef ssize_t (*zpq_rx_func) (void *arg, void *data, size_t size);
  * rx_data: received data (compressed data already fetched from input stream)
  * rx_data_size: size of data fetched from input stream
  */
-extern ZpqStream *zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char *rx_data, size_t rx_data_size);
+extern ZpqStream * zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char *rx_data, size_t rx_data_size);
 
 /*
  * Write up to "size" raw (decompressed) bytes.
@@ -53,17 +53,17 @@ extern ssize_t zpq_read(ZpqStream * zs, void *buf, size_t size);
 /*
  * Return an estimated amount of data in internal rx decompression buffer.
  */
-extern size_t		zpq_buffered_rx(ZpqStream * zs);
+extern size_t zpq_buffered_rx(ZpqStream * zs);
 
 /*
  * Return an estimated amount of data in internal tx compression buffer.
  */
-extern size_t		zpq_buffered_tx(ZpqStream * zs);
+extern size_t zpq_buffered_tx(ZpqStream * zs);
 
 /*
  * Free stream created by zs_create function.
  */
-extern void		zpq_free(ZpqStream * zs);
+extern void zpq_free(ZpqStream * zs);
 
 /*
  * Get decompressor error message.
@@ -78,4 +78,3 @@ extern char const *zpq_compress_error(ZpqStream * zs);
 /*
  * Get the name of chosen compression algorithm.
  */
-extern char const *zpq_compress_algorithm_name(ZpqStream * zs);

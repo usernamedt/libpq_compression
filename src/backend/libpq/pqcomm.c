@@ -289,8 +289,8 @@ SendCompressionAck:
 
 		if (index >= 0)			/* Use compression */
 		{
-            PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort,
-                                  NULL, 0);
+			PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort,
+								  NULL, 0);
 			if (!PqStream)
 			{
 				ereport(LOG,
@@ -399,7 +399,7 @@ socket_close(int code, Datum arg)
 #endif							/* ENABLE_GSS || ENABLE_SSPI */
 
 		/* Release compression streams */
-        zpq_free(PqStream);
+		zpq_free(PqStream);
 
 		/*
 		 * Cleanly shut down SSL layer.  Nowhere else does a postmaster child
@@ -1075,7 +1075,7 @@ pq_recvbuf(bool nowait)
 		 */
 		r = PqStream
 			? zpq_read(PqStream, PqRecvBuffer + PqRecvLength,
-                       PQ_RECV_BUFFER_SIZE - PqRecvLength)
+					   PQ_RECV_BUFFER_SIZE - PqRecvLength)
 			: secure_read(MyProcPort, PqRecvBuffer + PqRecvLength,
 						  PQ_RECV_BUFFER_SIZE - PqRecvLength);
 

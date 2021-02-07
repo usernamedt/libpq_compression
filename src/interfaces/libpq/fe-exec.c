@@ -3286,7 +3286,7 @@ PQflush(PGconn *conn)
 int
 PQreadPending(PGconn *conn)
 {
-    return pqReadPending(conn);
+	return pqReadPending(conn);
 }
 
 

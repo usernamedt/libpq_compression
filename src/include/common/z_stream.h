@@ -27,14 +27,14 @@ typedef struct ZStream ZStream;
  * c_level: compression c_level
  * d_alg_impl: index of chosen decompression algorithm
  */
-extern ZStream  *zs_create(int c_alg_impl, int c_level, int d_alg_impl);
+extern ZStream * zs_create(int c_alg_impl, int c_level, int d_alg_impl);
 
 /*
  * Read up to "size" raw (decompressed) bytes.
  * Returns number of decompressed bytes or error code.
  * Error code is either ZS_DECOMPRESS_ERROR or error code returned by the rx function.
  */
-extern ssize_t		zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed);
+extern ssize_t zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed);
 
 /*
  * Write up to "size" raw (decompressed) bytes.
@@ -42,7 +42,7 @@ extern ssize_t		zs_read(ZStream * zs, void const *src, size_t src_size, size_t *
  * Error code is either ZS_COMPRESS_ERROR or error code returned by the tx function.
  * In the last case number of bytes written is stored in *processed.
  */
-extern ssize_t		zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *dst, size_t dst_size, size_t *dst_processed);
+extern ssize_t zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *dst, size_t dst_size, size_t *dst_processed);
 
 /*
  * Get decompressor error message.
@@ -57,17 +57,17 @@ extern char const *zs_compress_error(ZStream * zs);
 /*
  * Return an estimated amount of data in internal rx decompression buffer.
  */
-extern size_t		zs_buffered_rx(ZStream * zs);
+extern size_t zs_buffered_rx(ZStream * zs);
 
 /*
  * Return an estimated amount of data in internal tx compression buffer.
  */
-extern size_t		zs_buffered_tx(ZStream * zs);
+extern size_t zs_buffered_tx(ZStream * zs);
 
 /*
  * Free stream created by zs_create function.
  */
-extern void		zs_free(ZStream * zs);
+extern void zs_free(ZStream * zs);
 
 /*
  * Get the name of chosen compression algorithm.
@@ -82,4 +82,4 @@ extern char const *zs_decompress_algorithm_name(ZStream * zs);
 /*
   Returns zero terminated array with compression algorithms names
 */
-extern char	  **zs_get_supported_algorithms(void);
+extern char **zs_get_supported_algorithms(void);

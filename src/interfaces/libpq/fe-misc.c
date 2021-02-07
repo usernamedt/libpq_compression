@@ -682,8 +682,8 @@ retry3:
 		if (nread == ZS_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-                              libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zpqStream));
+							  libpq_gettext("decompress error: %s\n"),
+							  zpq_decompress_error(conn->zpqStream));
 			return -1;
 		}
 
@@ -785,8 +785,8 @@ retry4:
 		if (nread == ZS_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-                              libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zpqStream));
+							  libpq_gettext("decompress error: %s\n"),
+							  zpq_decompress_error(conn->zpqStream));
 			return -1;
 		}
 
@@ -905,13 +905,14 @@ pqSendSome(PGconn *conn, int len)
 	while (len > 0 || zpq_buffered_tx(conn->zpqStream))
 	{
 		int			sent;
-		size_t      processed = 0;
-        /*
+		size_t		processed = 0;
+
+		/*
 		 * Use zpq_write if compression is switched on
 		 */
 		sent = conn->zpqStream
 			? zpq_write(conn->zpqStream, ptr, len, &processed)
-               #ifndef WIN32
+#ifndef WIN32
 			: pqsecure_write(conn, ptr, len);
 #else
 
@@ -920,7 +921,7 @@ pqSendSome(PGconn *conn, int len)
 		 * failure-point appears to be different in different versions of
 		 * Windows, but 64k should always be safe.
 		 */
-			: pqsecure_write(conn, ptr, Min(len, 65536));
+:			pqsecure_write(conn, ptr, Min(len, 65536));
 #endif
 		ptr += processed;
 		len -= processed;
@@ -1146,7 +1147,8 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
 		return -1;
 	}
 
-	if (forRead && (pqReadPending(conn) > 0)) {
+	if (forRead && (pqReadPending(conn) > 0))
+	{
 		return 1;
 	}
 
@@ -1172,12 +1174,14 @@ pqSocketCheck(PGconn *conn, int forRead, int forWrite, time_t end_time)
  * Returns -1 on failure, 0 if no, 1 if yes.
  */
 int
-pqReadPending(PGconn *conn) {
+pqReadPending(PGconn *conn)
+{
 	if (!conn)
 		return -1;
 
 	/* check for ZPQ stream buffered read bytes */
-	if (zpq_buffered_rx(conn->zpqStream)) {
+	if (zpq_buffered_rx(conn->zpqStream))
+	{
 		/* short-circuit the select */
 		return 1;
 	}
