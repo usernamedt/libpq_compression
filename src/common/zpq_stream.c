@@ -134,9 +134,6 @@ zpq_write_raw(ZpqStream * zc, char const *src, size_t src_size, size_t *src_proc
 
 static ssize_t
 zpq_switch_compression(ZpqStream * zpq, char msg_type, uint32 msg_len) {
-    printf("msg_type: %c msg_len: %u\n", msg_type, msg_len);
-    fflush(stdout);
-
     if (zpq_should_compress(msg_type, msg_len))
     {
         zpq->is_compressing = true;
@@ -211,8 +208,6 @@ zpq_write(ZpqStream * zq, void const *buf, size_t size, size_t *processed)
 
 			memcpy(&msg_len, (char *) buf + buf_pos + zq->tx_msg_bytes_left - zq->tx_msg_h_size + 1, 4);
 			msg_len = pg_ntoh32(msg_len);
-			printf("msg_type: %c msg_len: %u\n", msg_type, msg_len);
-			fflush(stdout);
 			if (zpq_should_compress(msg_type, msg_len) != zq->is_compressing)
 			{
 				/*
