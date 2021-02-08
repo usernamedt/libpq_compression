@@ -2146,17 +2146,17 @@ pqBuildStartupPacket3(PGconn *conn, int *packetlen,
  * and is used during handshake when a compression acknowledgment response is received from the server.
  */
 static bool
-build_compressors_list(PGconn *conn, char** client_compressors, bool build_descriptors)
+build_compressors_list(PGconn *conn, char **client_compressors, bool build_descriptors)
 {
-	char** supported_algorithms = zpq_get_supported_algorithms();
-	char* value = conn->compression;
-	int n_supported_algorithms;
-	int total_len = 0;
-	int i;
+	char	  **supported_algorithms = zs_get_supported_algorithms();
+	char	   *value = conn->compression;
+	int			n_supported_algorithms;
+	int			total_len = 0;
+	int			i;
 
 	for (n_supported_algorithms = 0; supported_algorithms[n_supported_algorithms] != NULL; n_supported_algorithms++)
 	{
-		total_len += strlen(supported_algorithms[n_supported_algorithms])+1;
+		total_len += strlen(supported_algorithms[n_supported_algorithms]) + 1;
 	}
 
 	if (pg_strcasecmp(value, "true") == 0 ||
@@ -2166,7 +2166,7 @@ build_compressors_list(PGconn *conn, char** client_compressors, bool build_descr
 		pg_strcasecmp(value, "1") == 0)
 	{
 		/* Compression is enabled: choose algorithm automatically */
-		char* p;
+		char	   *p;
 
 		if (n_supported_algorithms == 0)
 		{
@@ -2177,7 +2177,7 @@ build_compressors_list(PGconn *conn, char** client_compressors, bool build_descr
 		}
 		*client_compressors = p = malloc(total_len);
 		if (build_descriptors)
-			conn->compressors = malloc(n_supported_algorithms*sizeof(pg_conn_compressor));
+			conn->compressors = malloc(n_supported_algorithms * sizeof(pg_conn_compressor));
 		for (i = 0; i < n_supported_algorithms; i++)
 		{
 			strcpy(p, supported_algorithms[i]);
@@ -2207,20 +2207,22 @@ build_compressors_list(PGconn *conn, char** client_compressors, bool build_descr
 	else
 	{
 		/* List of compression algorithms separated by commas */
-		char *src, *dst;
-		int n_suggested_algorithms = 0;
-		char* suggested_algorithms = strdup(value);
+		char	   *src,
+				   *dst;
+		int			n_suggested_algorithms = 0;
+		char	   *suggested_algorithms = strdup(value);
+
 		src = suggested_algorithms;
 		*client_compressors = dst = strdup(value);
 
 		if (build_descriptors)
-			conn->compressors = malloc(n_supported_algorithms*sizeof(pg_conn_compressor));
+			conn->compressors = malloc(n_supported_algorithms * sizeof(pg_conn_compressor));
 
 		while (*src != '\0')
 		{
-			char* sep = strchr(src, ',');
-			char* col;
-			int compression_level = ZPQ_DEFAULT_COMPRESSION_LEVEL;
+			char	   *sep = strchr(src, ',');
+			char	   *col;
+			int			compression_level = ZPQ_DEFAULT_COMPRESSION_LEVEL;
 
 			if (sep != NULL)
 				*sep = '\0';
@@ -2231,11 +2233,11 @@ build_compressors_list(PGconn *conn, char** client_compressors, bool build_descr
 			if (col != NULL)
 			{
 				*col = '\0';
-				if (sscanf(col+1, "%d", &compression_level) != 1 && !build_descriptors)
+				if (sscanf(col + 1, "%d", &compression_level) != 1 && !build_descriptors)
 				{
 					fprintf(stderr,
 							libpq_gettext("WARNING: invalid compression level %s in compression option '%s'\n"),
-							col+1, value);
+							col + 1, value);
 					return false;
 				}
 			}
@@ -2255,7 +2257,7 @@ build_compressors_list(PGconn *conn, char** client_compressors, bool build_descr
 				}
 			}
 			if (sep)
-				src = sep+1;
+				src = sep + 1;
 			else
 				break;
 		}
@@ -2330,8 +2332,9 @@ build_startup_packet(const PGconn *conn, char *packet,
 		ADD_STARTUP_OPTION("options", conn->pgoptions);
 	if (conn->compression && conn->compression[0])
 	{
-		char* client_compression_algorithms;
-		if (build_compressors_list((PGconn*)conn, &client_compression_algorithms, packet == NULL))
+		char	   *client_compression_algorithms;
+
+		if (build_compressors_list((PGconn *) conn, &client_compression_algorithms, packet == NULL))
 		{
 			if (client_compression_algorithms)
 			{
