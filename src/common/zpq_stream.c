@@ -455,14 +455,14 @@ zpq_toggle_decompression(ZpqStream * zc) {
 }
 
 ssize_t
-zpq_read(ZpqStream * zc, void *buf, size_t size)
+zpq_read(ZpqStream * zc, void *dst, size_t dst_size)
 {
-	size_t		buf_pos = 0;
-	size_t		buf_processed = 0;
+	size_t		dst_pos = 0;
+	size_t		dst_processed = 0;
 	ssize_t		rc;
 
 	/* Read until some data fetched */
-	while (buf_pos == 0)
+	while (dst_pos == 0)
 	{
 	    zpq_buf_reuse(&zc->rx);
 
@@ -506,11 +506,11 @@ zpq_read(ZpqStream * zc, void *buf, size_t size)
 
 		if (zc->rx_msg_bytes_left > 0 || zs_buffered_rx(zc->z_stream))
 		{
-            buf_processed = 0;
+            dst_processed = 0;
 			if (zc->is_decompressing || zs_buffered_rx(zc->z_stream))
 			{
-				rc = zpq_read_compressed_message(zc, buf, size-buf_pos, &buf_processed);
-				buf_pos += buf_processed;
+				rc = zpq_read_compressed_message(zc, dst, dst_size - dst_pos, &dst_processed);
+                dst_pos += dst_processed;
 				if (rc == ZS_STREAM_END)
 				{
 					continue;
@@ -521,12 +521,12 @@ zpq_read(ZpqStream * zc, void *buf, size_t size)
 				}
 			}
 			else
-                buf_pos += zpq_read_uncompressed(zc, zpq_buf_pos(&zc->rx), size - buf_pos);
+                dst_pos += zpq_read_uncompressed(zc, dst, dst_size - dst_pos);
 		}
 		else if (zpq_buf_unread(&zc->rx) >= 5)
             zpq_toggle_decompression(zc);
 	}
-	return buf_pos;
+	return dst_pos;
 }
 
 bool

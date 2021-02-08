@@ -44,11 +44,11 @@ extern ZpqStream * zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_t
 extern ssize_t zpq_write(ZpqStream * zs, void const *src, size_t src_size, size_t *src_processed);
 
 /*
- * Read up to "size" raw (decompressed) bytes.
+ * Read up to "dst_size" raw (decompressed) bytes.
  * Returns number of decompressed bytes or error code.
  * Error code is either ZPQ_DECOMPRESS_ERROR or error code returned by the rx function.
  */
-extern ssize_t zpq_read(ZpqStream * zs, void *buf, size_t size);
+extern ssize_t zpq_read(ZpqStream * zs, void *dst, size_t dst_size);
 
 /*
  * Return true if non-flushed data left in internal rx decompression buffer.
