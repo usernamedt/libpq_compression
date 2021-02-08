@@ -386,7 +386,7 @@ struct pg_conn
 								 * comma) */
 	pg_conn_compressor *compressors;	/* descriptors of compression
 										 * algorithms chosen by client */
-	unsigned			n_compressors;  /* size of compressors array  */
+	unsigned	n_compressors;	/* size of compressors array  */
 
 	/* Type of connection to make.  Possible values: any, read-write. */
 	char	   *target_session_attrs;
@@ -547,7 +547,7 @@ struct pg_conn
 	PQExpBufferData workBuffer; /* expansible string */
 
 	/* Compression stream */
-	ZpqStream  *zstream;
+	ZpqStream  *zpqStream;
 };
 
 /* PGcancel stores all data necessary to cancel a connection. A copy of this

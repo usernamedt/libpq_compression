@@ -65,8 +65,8 @@ static int	pqSocketPoll(int sock, int forRead, int forWrite, time_t end_time);
  * Use zpq_read if compression is switched on
  */
 #define pq_read_conn(conn)												\
-	(conn->zstream														\
-	 ? zpq_read(conn->zstream, conn->inBuffer + conn->inEnd,			\
+	(conn->zpqStream													\
+	 ? zpq_read(conn->zpqStream, conn->inBuffer + conn->inEnd,			\
 				conn->inBufSize - conn->inEnd)							\
 	 : pqsecure_read(conn, conn->inBuffer + conn->inEnd,				\
 					 conn->inBufSize - conn->inEnd))
@@ -679,11 +679,11 @@ retry3:
 	nread = pq_read_conn(conn);
 	if (nread < 0)
 	{
-		if (nread == ZPQ_DECOMPRESS_ERROR)
+		if (nread == ZS_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-                              libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zstream));
+							  libpq_gettext("decompress error: %s\n"),
+							  zpq_decompress_error(conn->zpqStream));
 			return -1;
 		}
 
@@ -782,11 +782,11 @@ retry4:
 
 	if (nread < 0)
 	{
-		if (nread == ZPQ_DECOMPRESS_ERROR)
+		if (nread == ZS_DECOMPRESS_ERROR)
 		{
 			printfPQExpBuffer(&conn->errorMessage,
-                              libpq_gettext("decompress error: %s\n"),
-                              zpq_decompress_error(conn->zstream));
+							  libpq_gettext("decompress error: %s\n"),
+							  zpq_decompress_error(conn->zpqStream));
 			return -1;
 		}
 
@@ -902,15 +902,16 @@ pqSendSome(PGconn *conn, int len)
 	}
 
 	/* while there's still data to send */
-	while (len > 0 || zpq_buffered_tx(conn->zstream))
+	while (len > 0 || zpq_buffered_tx(conn->zpqStream))
 	{
 		int			sent;
-		size_t      processed = 0;
-        /*
+		size_t		processed = 0;
+
+		/*
 		 * Use zpq_write if compression is switched on
 		 */
-		sent = conn->zstream
-			? zpq_write(conn->zstream, ptr, len, &processed)
+		sent = conn->zpqStream
+			? zpq_write(conn->zpqStream, ptr, len, &processed)
 #ifndef WIN32
 			: pqsecure_write(conn, ptr, len);
 #else
@@ -978,7 +979,7 @@ pqSendSome(PGconn *conn, int len)
 			remaining -= sent;
 		}
 
-		if (len > 0 || sent < 0 || zpq_buffered_tx(conn->zstream))
+		if (len > 0 || sent < 0 || zpq_buffered_tx(conn->zpqStream))
 		{
 			/*
 			 * We didn't send it all, wait till we can send more.
