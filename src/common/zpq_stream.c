@@ -10,6 +10,7 @@
 									 * limited by record length, which in turn
 									 * is usually less than page size (except
 									 * TOAST) */
+#define ZPQ_COMPRESSED_MSG_TYPE 'm'
 
 typedef struct ZpqBuffer ZpqBuffer;
 
@@ -128,7 +129,7 @@ zpq_should_compress(char msg_type, uint32 msg_len)
 static inline bool
 zpq_is_compressed_message(char msg_type)
 {
-	return msg_type == 'm';
+	return msg_type == ZPQ_COMPRESSED_MSG_TYPE;
 }
 
 ZpqStream *
@@ -191,7 +192,9 @@ zpq_write_compressed_message(ZpqStream * zc, char const *src, size_t src_size, s
 
 	if (compressed_len > 0)
 	{
-		*zpq_buf_size(&zc->tx) = 'm';	/* write CompressedMessage type */
+		*zpq_buf_size(&zc->tx) = ZPQ_COMPRESSED_MSG_TYPE;	/* write
+															 * CompressedMessage
+															 * type */
 		size = pg_hton32(compressed_len + 4);
 
 		memcpy(zpq_buf_size(&zc->tx) + 1, &size, sizeof(uint32));	/* write msg length */
