@@ -38,7 +38,7 @@ static inline size_t zpq_buf_left(ZpqBuffer *zb)
     return ZPQ_BUFFER_SIZE - zb->pos;
 }
 
-static inline ssize_t zpq_buf_unread(ZpqBuffer *zb)
+static inline size_t zpq_buf_unread(ZpqBuffer *zb)
 {
     return zb->pos - zb->pos_read;
 }
@@ -466,7 +466,7 @@ zpq_read(ZpqStream * zc, void *buf, size_t size)
 
 			zc->is_decompressing = zpq_should_decompress(msg_type);
 
-			memcpy(&msg_len, zpq_buf_pos(&zc->rx) + 1, 4);
+			memcpy(&msg_len, zpq_buf_read(&zc->rx) + 1, 4);
 			zc->rx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
 
 			if (zc->is_decompressing)
