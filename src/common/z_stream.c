@@ -591,6 +591,27 @@ zs_free(ZStream * zs)
 	}
 }
 
+ssize_t
+zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed)
+{
+	*dst_processed = 0;
+
+	ssize_t		rc = zs->c_algorithm->end_compression(zs->c_stream, dst, dst_size, dst_processed);
+
+	zs->tx_not_flushed = false;
+	if (rc == ZS_DATA_PENDING)
+	{
+		zs->tx_not_flushed = true;
+		return ZS_OK;
+	}
+	if (rc != ZS_OK)
+	{
+		return ZS_COMPRESS_ERROR;
+	}
+
+	return rc;
+}
+
 char const *
 zs_compress_error(ZStream * zs)
 {

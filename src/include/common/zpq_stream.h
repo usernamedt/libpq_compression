@@ -41,41 +41,41 @@ extern ZpqStream * zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_t
  * Error code is either ZPQ_COMPRESS_ERROR or error code returned by the tx function.
  * In the last case number of bytes written is stored in *src_processed.
  */
-extern ssize_t zpq_write(ZpqStream * zs, void const *src, size_t src_size, size_t *src_processed);
+extern ssize_t zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_processed);
 
 /*
  * Read up to "dst_size" raw (decompressed) bytes.
  * Returns number of decompressed bytes or error code.
  * Error code is either ZPQ_DECOMPRESS_ERROR or error code returned by the rx function.
  */
-extern ssize_t zpq_read(ZpqStream * zs, void *dst, size_t dst_size);
+extern ssize_t zpq_read(ZpqStream * zpq, void *dst, size_t dst_size);
 
 /*
  * Return true if non-flushed data left in internal rx decompression buffer.
  */
-extern bool zpq_buffered_rx(ZpqStream * zs);
+extern bool zpq_buffered_rx(ZpqStream * zpq);
 
 /*
  * Return true if non-flushed data left in internal tx compression buffer.
  */
-extern bool zpq_buffered_tx(ZpqStream * zs);
+extern bool zpq_buffered_tx(ZpqStream * zpq);
 
 /*
  * Free stream created by zs_create function.
  */
-extern void zpq_free(ZpqStream * zs);
+extern void zpq_free(ZpqStream * zpq);
 
 /*
  * Get decompressor error message.
  */
-extern char const *zpq_decompress_error(ZpqStream * zs);
+extern char const *zpq_decompress_error(ZpqStream * zpq);
 
 /*
  * Get compressor error message.
  */
-extern char const *zpq_compress_error(ZpqStream * zs);
+extern char const *zpq_compress_error(ZpqStream * zpq);
 
 /*
  * Get the name of chosen compression algorithm.
  */
-extern char const *zpq_compress_algorithm_name(ZpqStream * zs);
+extern char const *zpq_compress_algorithm_name(ZpqStream * zpq);

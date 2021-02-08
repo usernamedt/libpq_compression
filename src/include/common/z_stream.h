@@ -65,6 +65,11 @@ extern bool zs_buffered_rx(ZStream * zs);
 extern bool zs_buffered_tx(ZStream * zs);
 
 /*
+ * End the compression stream.
+ */
+extern ssize_t zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed);
+
+/*
  * Free stream created by zs_create function.
  */
 extern void zs_free(ZStream * zs);
