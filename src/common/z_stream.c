@@ -603,13 +603,13 @@ zs_decompress_error(ZStream * zs)
 	return zs->d_algorithm->decompress_error(zs->d_stream);
 }
 
-size_t
+bool
 zs_buffered_rx(ZStream * zs)
 {
 	return zs ? zs->rx_not_flushed : 0;
 }
 
-size_t
+bool
 zs_buffered_tx(ZStream * zs)
 {
 	return zs ? zs->tx_not_flushed : 0;

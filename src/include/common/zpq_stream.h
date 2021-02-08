@@ -36,12 +36,12 @@ typedef ssize_t (*zpq_rx_func) (void *arg, void *data, size_t size);
 extern ZpqStream * zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq_rx_func rx_func, void *arg, char *rx_data, size_t rx_data_size);
 
 /*
- * Write up to "size" raw (decompressed) bytes.
+ * Write up to "src_size" raw (decompressed) bytes.
  * Returns number of written raw bytes or error code.
  * Error code is either ZPQ_COMPRESS_ERROR or error code returned by the tx function.
- * In the last case number of bytes written is stored in *processed.
+ * In the last case number of bytes written is stored in *src_processed.
  */
-extern ssize_t zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *processed);
+extern ssize_t zpq_write(ZpqStream * zs, void const *src, size_t src_size, size_t *src_processed);
 
 /*
  * Read up to "size" raw (decompressed) bytes.
@@ -51,14 +51,14 @@ extern ssize_t zpq_write(ZpqStream * zs, void const *buf, size_t size, size_t *p
 extern ssize_t zpq_read(ZpqStream * zs, void *buf, size_t size);
 
 /*
- * Return an estimated amount of data in internal rx decompression buffer.
+ * Return true if non-flushed data left in internal rx decompression buffer.
  */
-extern size_t zpq_buffered_rx(ZpqStream * zs);
+extern bool zpq_buffered_rx(ZpqStream * zs);
 
 /*
- * Return an estimated amount of data in internal tx compression buffer.
+ * Return true if non-flushed data left in internal tx compression buffer.
  */
-extern size_t zpq_buffered_tx(ZpqStream * zs);
+extern bool zpq_buffered_tx(ZpqStream * zs);
 
 /*
  * Free stream created by zs_create function.

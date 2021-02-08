@@ -55,14 +55,14 @@ extern char const *zs_decompress_error(ZStream * zs);
 extern char const *zs_compress_error(ZStream * zs);
 
 /*
- * Return an estimated amount of data in internal rx decompression buffer.
+ * Return true if non-flushed data might left in internal rx decompression buffer.
  */
-extern size_t zs_buffered_rx(ZStream * zs);
+extern bool zs_buffered_rx(ZStream * zs);
 
 /*
- * Return an estimated amount of data in internal tx compression buffer.
+ * Return true if non-flushed data might left in internal tx compression buffer.
  */
-extern size_t zs_buffered_tx(ZStream * zs);
+extern bool zs_buffered_tx(ZStream * zs);
 
 /*
  * Free stream created by zs_create function.
