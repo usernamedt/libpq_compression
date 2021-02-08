@@ -119,7 +119,7 @@ struct ZpqStream
 static inline bool
 zpq_should_compress(char msg_type, uint32 msg_len)
 {
-	return true;	/* subject to change? */
+	return msg_type == 'd' || msg_type == 'D';	/* subject to change? */
 }
 
 /*
