@@ -5,7 +5,7 @@
 #include "port/pg_bswap.h"
 #include "common/z_stream.h"
 
-#define ZPQ_BUFFER_SIZE       8192  /* We have to flush stream after each
+#define ZPQ_BUFFER_SIZE       8192	/* We have to flush stream after each
 									 * protocol command and command is mostly
 									 * limited by record length, which in turn
 									 * is usually less than page size (except
@@ -88,24 +88,25 @@ struct ZpqStream
 {
 	ZStream    *z_stream;		/* underlying compression stream */
 
-	ZpqBuffer   tx_in;
-
 	size_t		tx_total;		/* amount of bytes sent to tx_func */
+
 	size_t		tx_total_raw;	/* amount of bytes received by zpq_write */
 	size_t		rx_total;		/* amount of bytes read by rx_func */
 	size_t		rx_total_raw;	/* amount of bytes returned by zpq_write */
-
 	bool		is_compressing; /* current compression state */
-	bool		is_decompressing;	/* current decompression state */
 
+	bool		is_decompressing;	/* current decompression state */
 	size_t		rx_msg_bytes_left;	/* number of bytes left to process without
+									 *
 									 * changing the decompression state */
 	size_t		tx_msg_bytes_left;	/* number of bytes left to process without
 									 * changing the compression state */
 
-	ZpqBuffer	rx_in;				/* buffer for readahead data read by rx_func */
-	ZpqBuffer	tx_out;				/* buffer for data waiting for send via
-								 * tx_func */
+	ZpqBuffer	rx_in;			/* buffer for unprocessed data read by rx_func */
+	ZpqBuffer	tx_in;			/* buffer for unprocessed data consumed by
+								 * zpq_write */
+	ZpqBuffer	tx_out;			/* buffer for processed data waiting for send
+								 * via tx_func */
 
 	zpq_rx_func rx_func;
 	zpq_tx_func tx_func;
@@ -191,9 +192,8 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 
 	if (compressed_len > 0)
 	{
-		*zpq_buf_size(&zpq->tx_out) = ZPQ_COMPRESSED_MSG_TYPE;	/* write
-															 * CompressedMessage
-															 * type */
+		/* write CompressedMessage type */
+		*zpq_buf_size(&zpq->tx_out) = ZPQ_COMPRESSED_MSG_TYPE;
 		size = pg_hton32(compressed_len + 4);
 
 		memcpy(zpq_buf_size(&zpq->tx_out) + 1, &size, sizeof(uint32));	/* write msg length */
@@ -367,52 +367,54 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 ssize_t
 zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_processed)
 {
-	size_t src_pos = 0;
+	size_t		src_pos = 0;
 	ssize_t		rc;
 
 	while (src_pos < src_size || zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0))
 	{
-	    size_t copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
-        memcpy(zpq_buf_size(&zpq->tx_in), (char*)src + src_pos, copy_len);
-        zpq_buf_size_advance(&zpq->tx_in, copy_len);
-        src_pos += copy_len;
+		size_t		copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
 
-        size_t processed = 0;
-        rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->tx_in), zpq_buf_unread(&zpq->tx_in), &processed);
-        if (rc > 0)
-        {
-            zpq_buf_pos_advance(&zpq->tx_in, rc);
-            zpq_buf_reuse(&zpq->tx_in);
-        }
-        else
-        {
-            zpq_buf_pos_advance(&zpq->tx_in, processed);
-            zpq_buf_reuse(&zpq->tx_in);
-            *src_processed = src_pos;
-            return rc;
-        }
+		memcpy(zpq_buf_size(&zpq->tx_in), (char *) src + src_pos, copy_len);
+		zpq_buf_size_advance(&zpq->tx_in, copy_len);
+		src_pos += copy_len;
+
+		size_t		processed = 0;
+
+		rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->tx_in), zpq_buf_unread(&zpq->tx_in), &processed);
+		if (rc > 0)
+		{
+			zpq_buf_pos_advance(&zpq->tx_in, rc);
+			zpq_buf_reuse(&zpq->tx_in);
+		}
+		else
+		{
+			zpq_buf_pos_advance(&zpq->tx_in, processed);
+			zpq_buf_reuse(&zpq->tx_in);
+			*src_processed = src_pos;
+			return rc;
+		}
 	}
 
-    /*
-     * call the tx_func if have any bytes to send
-     */
-    while (zpq_buf_unread(&zpq->tx_out))
-    {
-        rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx_out), zpq_buf_unread(&zpq->tx_out));
-        if (rc > 0)
-        {
-            zpq_buf_pos_advance(&zpq->tx_out, rc);
-        }
-        else
-        {
-            *src_processed = src_pos;
-            zpq_buf_reuse(&zpq->tx_out);
-            return rc;
-        }
-    }
+	/*
+	 * call the tx_func if have any bytes to send
+	 */
+	while (zpq_buf_unread(&zpq->tx_out))
+	{
+		rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx_out), zpq_buf_unread(&zpq->tx_out));
+		if (rc > 0)
+		{
+			zpq_buf_pos_advance(&zpq->tx_out, rc);
+		}
+		else
+		{
+			*src_processed = src_pos;
+			zpq_buf_reuse(&zpq->tx_out);
+			return rc;
+		}
+	}
 
-    zpq_buf_reuse(&zpq->tx_out);
-    return src_pos;
+	zpq_buf_reuse(&zpq->tx_out);
+	return src_pos;
 }
 
 
@@ -558,8 +560,8 @@ zpq_buffered_rx(ZpqStream * zpq)
 bool
 zpq_buffered_tx(ZpqStream * zpq)
 {
-    return zpq ? zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx_out) > 0 ||
-				 zs_buffered_tx(zpq->z_stream) : 0;
+	return zpq ? zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx_out) > 0 ||
+		zs_buffered_tx(zpq->z_stream) : 0;
 }
 
 
