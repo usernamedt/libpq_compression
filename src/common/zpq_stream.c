@@ -11,6 +11,7 @@
 									 * is usually less than page size (except
 									 * TOAST) */
 #define ZPQ_COMPRESSED_MSG_TYPE 'm'
+#define ZPQ_COMPRESS_THRESHOLD 50
 
 typedef struct ZpqBuffer ZpqBuffer;
 
@@ -119,7 +120,7 @@ struct ZpqStream
 static inline bool
 zpq_should_compress(char msg_type, uint32 msg_len)
 {
-	return true;
+	return msg_type == 'd' || msg_type == 'D' || msg_len >= ZPQ_COMPRESS_THRESHOLD;
 }
 
 /*
