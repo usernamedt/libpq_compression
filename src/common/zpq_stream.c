@@ -86,9 +86,8 @@ zpq_buf_reuse(ZpqBuffer * zb)
 struct ZpqStream
 {
 	ZStream    *z_stream;		/* underlying compression stream */
-	char		tx_msg_h_buf[5];	/* incomplete message header buffer */
-	size_t		tx_msg_h_size;
-	size_t		tx_msg_h_pos;
+
+	ZpqBuffer   raw_tx;
 
 	size_t		tx_total;		/* amount of bytes sent to tx_func */
 	size_t		tx_total_raw;	/* amount of bytes received by zpq_write */
@@ -141,8 +140,7 @@ zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq
 	zpq->is_decompressing = false;
 	zpq->rx_msg_bytes_left = 0;
 	zpq->tx_msg_bytes_left = 0;
-	zpq->tx_msg_h_size = 0;
-	zpq->tx_msg_h_pos = 0;
+	zpq_buf_init(&zpq->raw_tx);
 
 	zpq->tx_total = 0;
 	zpq->tx_total_raw = 0;
@@ -273,41 +271,6 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 	do
 	{
 		/*
-		 * to reduce the socket write calls count and increase average payload
-		 * length, do not call tx_func until absolutely necessary.
-		 * should_send_now is true if there is no buffered data left in
-		 * compression buffers and one of the following is true: 1. Processed
-		 * all of the *src data 2. Have some *src data (<5 bytes) left
-		 * unprocessed but can't process it because full message header is
-		 * needed to determine tx_msg_bytes_left size.
-		 */
-		bool		should_send_now = (src_size - src_pos == 0 || (src_size - src_pos < 5 && zpq->tx_msg_bytes_left == 0)) && !zs_buffered_tx(zpq->z_stream);
-
-		/*
-		 * call the tx_func if should_send_now or too few space left in TX
-		 * buffer (<16 bytes)
-		 */
-		while (zpq_buf_unread(&zpq->tx) && (should_send_now || zpq_buf_left(&zpq->tx) < 16))
-		{
-			rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx), zpq_buf_unread(&zpq->tx));
-			if (rc > 0)
-			{
-				zpq_buf_pos_advance(&zpq->tx, rc);
-			}
-			else
-			{
-				*processed = src_pos;
-				return rc;
-			}
-		}
-		zpq_buf_reuse(&zpq->tx);
-		if (!zpq_buffered_tx(zpq) && src_size - src_pos == 0)
-		{
-			/* don't have anything to process, do not proceed further */
-			break;
-		}
-
-		/*
 		 * try to read ahead the next message types and increase
 		 * tx_msg_bytes_left, if possible
 		 */
@@ -403,63 +366,53 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 ssize_t
 zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_processed)
 {
-	size_t		src_pos = 0;
+	size_t src_pos = 0;
 	ssize_t		rc;
 
-	do
+	while (src_pos < src_size || zpq_buf_unread(&zpq->raw_tx) >= 5 || (zpq_buf_unread(&zpq->raw_tx) > 0 && zpq->tx_msg_bytes_left > 0))
 	{
-		/* reset the incomplete message header buffer if it has been processed */
-		if (zpq->tx_msg_h_pos == zpq->tx_msg_h_size)
-		{
-			Assert(zpq->tx_msg_h_size == 0 || zpq->tx_msg_h_size == 5);
-			zpq->tx_msg_h_pos = zpq->tx_msg_h_size = 0;
-		}
+	    size_t copy_len = Min(zpq_buf_left(&zpq->raw_tx), src_size - src_pos);
+        memcpy(zpq_buf_size(&zpq->raw_tx), (char*)src + src_pos, copy_len);	/* write msg length */
+        zpq_buf_size_advance(&zpq->raw_tx, copy_len);
+        src_pos += copy_len;
 
-		if ((zpq->tx_msg_bytes_left > 0 || src_size - src_pos >= 5 || zpq_buffered_tx(zpq)) && zpq->tx_msg_h_size == 0)
-		{
-			rc = zpq_write_internal(zpq, (char *) src + src_pos, src_size - src_pos, src_processed);
-			if (rc > 0)
-			{
-				rc += src_pos;
-			}
-			else
-			{
-				*src_processed += src_pos;
-			}
-			return rc;
-		}
+        size_t processed = 0;
+        rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->raw_tx), zpq_buf_unread(&zpq->raw_tx), &processed);
+        if (rc > 0)
+        {
+            zpq_buf_pos_advance(&zpq->raw_tx, rc);
+            zpq_buf_reuse(&zpq->raw_tx);
+        }
+        else
+        {
+            zpq_buf_pos_advance(&zpq->raw_tx, processed);
+            zpq_buf_reuse(&zpq->raw_tx);
+            *src_processed = src_pos;
+            return rc;
+        }
+	}
 
-		if (zpq->tx_msg_h_size < 5)
-		{
-			/* read more data into incomplete header buffer */
-			size_t		to_copy = Min(5 - zpq->tx_msg_h_size, src_size - src_pos);
+    /*
+     * call the tx_func if should_send_now or too few space left in TX
+     * buffer (<16 bytes)
+     */
+    while (zpq_buf_unread(&zpq->tx))
+    {
+        rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx), zpq_buf_unread(&zpq->tx));
+        if (rc > 0)
+        {
+            zpq_buf_pos_advance(&zpq->tx, rc);
+        }
+        else
+        {
+            *src_processed = src_pos;
+            zpq_buf_reuse(&zpq->tx);
+            return rc;
+        }
+    }
 
-			memcpy((char *) zpq->tx_msg_h_buf + zpq->tx_msg_h_size, (char *) src + src_pos, to_copy);
-			zpq->tx_msg_h_size += to_copy;
-			src_pos += to_copy;
-			if (zpq->tx_msg_h_size < 5)
-			{
-				/* message header is still incomplete, can't proceed further */
-				Assert(src_size - src_pos == 0);
-				return src_pos;
-			}
-		}
-
-		Assert(zpq->tx_msg_h_size == 5);
-		rc = zpq_write_internal(zpq, (char *) zpq->tx_msg_h_buf + zpq->tx_msg_h_pos, zpq->tx_msg_h_size - zpq->tx_msg_h_pos,
-								src_processed);
-		if (rc > 0)
-		{
-			zpq->tx_msg_h_pos += rc;
-		}
-		else
-		{
-			zpq->tx_msg_h_pos += *src_processed;
-			*src_processed = src_pos;
-			return rc;
-		}
-	} while (src_pos < src_size || zpq_buffered_rx(zpq));
-	return src_pos;
+    zpq_buf_reuse(&zpq->tx);
+    return src_pos;
 }
 
 
@@ -605,9 +558,11 @@ zpq_buffered_rx(ZpqStream * zpq)
 bool
 zpq_buffered_tx(ZpqStream * zpq)
 {
-	return zpq ? zpq->tx_msg_h_size == 5 || (zpq->tx_msg_h_size > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx) > 0 ||
-		zs_buffered_tx(zpq->z_stream) : 0;
+    return zpq ? zpq_buf_unread(&zpq->raw_tx) >= 5 || (zpq_buf_unread(&zpq->raw_tx) > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx) > 0 ||
+                 zs_buffered_tx(zpq->z_stream) : 0;
 }
+
+
 
 void
 zpq_free(ZpqStream * zpq)
