@@ -11,6 +11,7 @@
 									 * is usually less than page size (except
 									 * TOAST) */
 #define ZPQ_COMPRESSED_MSG_TYPE 'm'
+#define ZPQ_COMPRESS_THRESHOLD 50
 
 typedef struct ZpqBuffer ZpqBuffer;
 
@@ -87,7 +88,7 @@ struct ZpqStream
 {
 	ZStream    *z_stream;		/* underlying compression stream */
 
-	ZpqBuffer   raw_tx;
+	ZpqBuffer   tx_in;
 
 	size_t		tx_total;		/* amount of bytes sent to tx_func */
 	size_t		tx_total_raw;	/* amount of bytes received by zpq_write */
@@ -102,8 +103,8 @@ struct ZpqStream
 	size_t		tx_msg_bytes_left;	/* number of bytes left to process without
 									 * changing the compression state */
 
-	ZpqBuffer	rx;				/* buffer for readahead data read by rx_func */
-	ZpqBuffer	tx;				/* buffer for data waiting for send via
+	ZpqBuffer	rx_in;				/* buffer for readahead data read by rx_func */
+	ZpqBuffer	tx_out;				/* buffer for data waiting for send via
 								 * tx_func */
 
 	zpq_rx_func rx_func;
@@ -118,7 +119,7 @@ struct ZpqStream
 static inline bool
 zpq_should_compress(char msg_type, uint32 msg_len)
 {
-	return true;
+	return msg_type == 'd' || msg_type == 'D' || msg_len >= ZPQ_COMPRESS_THRESHOLD;
 }
 
 /*
@@ -140,19 +141,19 @@ zpq_create(int c_alg_impl, int c_level, int d_alg_impl, zpq_tx_func tx_func, zpq
 	zpq->is_decompressing = false;
 	zpq->rx_msg_bytes_left = 0;
 	zpq->tx_msg_bytes_left = 0;
-	zpq_buf_init(&zpq->raw_tx);
+	zpq_buf_init(&zpq->tx_in);
 
 	zpq->tx_total = 0;
 	zpq->tx_total_raw = 0;
 	zpq->rx_total = 0;
 	zpq->rx_total_raw = 0;
 
-	zpq_buf_init(&zpq->rx);
-	zpq_buf_size_advance(&zpq->rx, rx_data_size);
+	zpq_buf_init(&zpq->rx_in);
+	zpq_buf_size_advance(&zpq->rx_in, rx_data_size);
 	Assert(rx_data_size < ZPQ_BUFFER_SIZE);
-	memcpy(zpq->rx.buf, rx_data, rx_data_size);
+	memcpy(zpq->rx_in.buf, rx_data, rx_data_size);
 
-	zpq_buf_init(&zpq->tx);
+	zpq_buf_init(&zpq->tx_out);
 
 	zpq->rx_func = rx_func;
 	zpq->tx_func = tx_func;
@@ -177,7 +178,7 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	uint32		size;
 
 	/* check if have enough space */
-	if (zpq_buf_left(&zpq->tx) <= 5)
+	if (zpq_buf_left(&zpq->tx_out) <= 5)
 	{
 		/* too little space for CompressedMessage, abort */
 		*src_processed = 0;
@@ -186,16 +187,16 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 
 	compressed_len = 0;
 	rc = zs_write(zpq->z_stream, src, src_size, src_processed,
-				  zpq_buf_size(&zpq->tx) + 5, zpq_buf_left(&zpq->tx) - 5, &compressed_len);
+				  zpq_buf_size(&zpq->tx_out) + 5, zpq_buf_left(&zpq->tx_out) - 5, &compressed_len);
 
 	if (compressed_len > 0)
 	{
-		*zpq_buf_size(&zpq->tx) = ZPQ_COMPRESSED_MSG_TYPE;	/* write
+		*zpq_buf_size(&zpq->tx_out) = ZPQ_COMPRESSED_MSG_TYPE;	/* write
 															 * CompressedMessage
 															 * type */
 		size = pg_hton32(compressed_len + 4);
 
-		memcpy(zpq_buf_size(&zpq->tx) + 1, &size, sizeof(uint32));	/* write msg length */
+		memcpy(zpq_buf_size(&zpq->tx_out) + 1, &size, sizeof(uint32));	/* write msg length */
 		compressed_len += 5;	/* append header length to compressed data
 								 * length */
 	}
@@ -203,7 +204,7 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	zpq->tx_total_raw += *src_processed;
 	zpq->tx_total += compressed_len;
 
-	zpq_buf_size_advance(&zpq->tx, compressed_len);
+	zpq_buf_size_advance(&zpq->tx_out, compressed_len);
 	return rc;
 }
 
@@ -211,12 +212,12 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 static void
 zpq_write_uncompressed(ZpqStream * zpq, char const *src, size_t src_size, size_t *src_processed)
 {
-	src_size = Min(zpq_buf_left(&zpq->tx), src_size);
-	memcpy(zpq_buf_size(&zpq->tx), src, src_size);
+	src_size = Min(zpq_buf_left(&zpq->tx_out), src_size);
+	memcpy(zpq_buf_size(&zpq->tx_out), src, src_size);
 
 	zpq->tx_total_raw += src_size;
 	zpq->tx_total += src_size;
-	zpq_buf_size_advance(&zpq->tx, src_size);
+	zpq_buf_size_advance(&zpq->tx_out, src_size);
 	*src_processed = src_size;
 }
 
@@ -369,49 +370,48 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 	size_t src_pos = 0;
 	ssize_t		rc;
 
-	while (src_pos < src_size || zpq_buf_unread(&zpq->raw_tx) >= 5 || (zpq_buf_unread(&zpq->raw_tx) > 0 && zpq->tx_msg_bytes_left > 0))
+	while (src_pos < src_size || zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0))
 	{
-	    size_t copy_len = Min(zpq_buf_left(&zpq->raw_tx), src_size - src_pos);
-        memcpy(zpq_buf_size(&zpq->raw_tx), (char*)src + src_pos, copy_len);	/* write msg length */
-        zpq_buf_size_advance(&zpq->raw_tx, copy_len);
+	    size_t copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
+        memcpy(zpq_buf_size(&zpq->tx_in), (char*)src + src_pos, copy_len);
+        zpq_buf_size_advance(&zpq->tx_in, copy_len);
         src_pos += copy_len;
 
         size_t processed = 0;
-        rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->raw_tx), zpq_buf_unread(&zpq->raw_tx), &processed);
+        rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->tx_in), zpq_buf_unread(&zpq->tx_in), &processed);
         if (rc > 0)
         {
-            zpq_buf_pos_advance(&zpq->raw_tx, rc);
-            zpq_buf_reuse(&zpq->raw_tx);
+            zpq_buf_pos_advance(&zpq->tx_in, rc);
+            zpq_buf_reuse(&zpq->tx_in);
         }
         else
         {
-            zpq_buf_pos_advance(&zpq->raw_tx, processed);
-            zpq_buf_reuse(&zpq->raw_tx);
+            zpq_buf_pos_advance(&zpq->tx_in, processed);
+            zpq_buf_reuse(&zpq->tx_in);
             *src_processed = src_pos;
             return rc;
         }
 	}
 
     /*
-     * call the tx_func if should_send_now or too few space left in TX
-     * buffer (<16 bytes)
+     * call the tx_func if have any bytes to send
      */
-    while (zpq_buf_unread(&zpq->tx))
+    while (zpq_buf_unread(&zpq->tx_out))
     {
-        rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx), zpq_buf_unread(&zpq->tx));
+        rc = zpq->tx_func(zpq->arg, zpq_buf_pos(&zpq->tx_out), zpq_buf_unread(&zpq->tx_out));
         if (rc > 0)
         {
-            zpq_buf_pos_advance(&zpq->tx, rc);
+            zpq_buf_pos_advance(&zpq->tx_out, rc);
         }
         else
         {
             *src_processed = src_pos;
-            zpq_buf_reuse(&zpq->tx);
+            zpq_buf_reuse(&zpq->tx_out);
             return rc;
         }
     }
 
-    zpq_buf_reuse(&zpq->tx);
+    zpq_buf_reuse(&zpq->tx_out);
     return src_pos;
 }
 
@@ -426,12 +426,12 @@ zpq_read_compressed_message(ZpqStream * zpq, char *dst, size_t dst_len, size_t *
 {
 	size_t		rx_processed = 0;
 	ssize_t		rc;
-	size_t		read_len = Min(zpq->rx_msg_bytes_left, zpq_buf_unread(&zpq->rx));
+	size_t		read_len = Min(zpq->rx_msg_bytes_left, zpq_buf_unread(&zpq->rx_in));
 
-	rc = zs_read(zpq->z_stream, zpq_buf_pos(&zpq->rx), read_len, &rx_processed,
+	rc = zs_read(zpq->z_stream, zpq_buf_pos(&zpq->rx_in), read_len, &rx_processed,
 				 dst, dst_len, dst_processed);
 
-	zpq_buf_pos_advance(&zpq->rx, rx_processed);
+	zpq_buf_pos_advance(&zpq->rx_in, rx_processed);
 	zpq->rx_total_raw += *dst_processed;
 	zpq->rx_msg_bytes_left -= rx_processed;
 	return rc;
@@ -442,12 +442,12 @@ zpq_read_compressed_message(ZpqStream * zpq, char *dst, size_t dst_len, size_t *
 static inline size_t
 zpq_read_uncompressed(ZpqStream * zpq, char *dst, size_t dst_len)
 {
-	Assert(zpq_buf_unread(&zpq->rx) > 0);
-	size_t		copy_len = Min(zpq->rx_msg_bytes_left, Min(zpq_buf_unread(&zpq->rx), dst_len));
+	Assert(zpq_buf_unread(&zpq->rx_in) > 0);
+	size_t		copy_len = Min(zpq->rx_msg_bytes_left, Min(zpq_buf_unread(&zpq->rx_in), dst_len));
 
-	memcpy(dst, zpq_buf_pos(&zpq->rx), copy_len);
+	memcpy(dst, zpq_buf_pos(&zpq->rx_in), copy_len);
 
-	zpq_buf_pos_advance(&zpq->rx, copy_len);
+	zpq_buf_pos_advance(&zpq->rx_in, copy_len);
 	zpq->rx_total_raw += copy_len;
 	zpq->rx_msg_bytes_left -= copy_len;
 	return copy_len;
@@ -459,17 +459,17 @@ static inline void
 zpq_toggle_decompression(ZpqStream * zpq)
 {
 	uint32		msg_len;
-	char		msg_type = *zpq_buf_pos(&zpq->rx);
+	char		msg_type = *zpq_buf_pos(&zpq->rx_in);
 
 	zpq->is_decompressing = zpq_is_compressed_message(msg_type);
 
-	memcpy(&msg_len, zpq_buf_pos(&zpq->rx) + 1, 4);
+	memcpy(&msg_len, zpq_buf_pos(&zpq->rx_in) + 1, 4);
 	zpq->rx_msg_bytes_left = pg_ntoh32(msg_len) + 1;
 
 	if (zpq->is_decompressing)
 	{
 		/* compressed message header is no longer needed, just skip it */
-		zpq_buf_pos_advance(&zpq->rx, 5);
+		zpq_buf_pos_advance(&zpq->rx_in, 5);
 		zpq->rx_msg_bytes_left -= 5;
 	}
 }
@@ -484,15 +484,15 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 	/* Read until some data fetched */
 	while (dst_pos == 0)
 	{
-		zpq_buf_reuse(&zpq->rx);
+		zpq_buf_reuse(&zpq->rx_in);
 
 		if (!zpq_buffered_rx(zpq))
 		{
-			rc = zpq->rx_func(zpq->arg, zpq_buf_size(&zpq->rx), zpq_buf_left(&zpq->rx));
+			rc = zpq->rx_func(zpq->arg, zpq_buf_size(&zpq->rx_in), zpq_buf_left(&zpq->rx_in));
 			if (rc > 0)			/* read fetches some data */
 			{
 				zpq->rx_total += rc;
-				zpq_buf_size_advance(&zpq->rx, rc);
+				zpq_buf_size_advance(&zpq->rx_in, rc);
 			}
 			else				/* read failed */
 			{
@@ -504,11 +504,11 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 		 * try to read ahead the next message types and increase
 		 * rx_msg_bytes_left, if possible
 		 */
-		while (zpq->rx_msg_bytes_left > 0 && (zpq_buf_unread(&zpq->rx) >= zpq->rx_msg_bytes_left + 5))
+		while (zpq->rx_msg_bytes_left > 0 && (zpq_buf_unread(&zpq->rx_in) >= zpq->rx_msg_bytes_left + 5))
 		{
 			char		msg_type;
 
-			msg_type = *(zpq_buf_pos(&zpq->rx) + zpq->rx_msg_bytes_left);
+			msg_type = *(zpq_buf_pos(&zpq->rx_in) + zpq->rx_msg_bytes_left);
 			if (zpq->is_decompressing || zpq_is_compressed_message(msg_type))
 			{
 				/*
@@ -519,7 +519,7 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 			}
 			uint32		msg_len;
 
-			memcpy(&msg_len, zpq_buf_pos(&zpq->rx) + zpq->rx_msg_bytes_left + 1, 4);
+			memcpy(&msg_len, zpq_buf_pos(&zpq->rx_in) + zpq->rx_msg_bytes_left + 1, 4);
 			zpq->rx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
 		}
 
@@ -543,7 +543,7 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 			else
 				dst_pos += zpq_read_uncompressed(zpq, dst, dst_size - dst_pos);
 		}
-		else if (zpq_buf_unread(&zpq->rx) >= 5)
+		else if (zpq_buf_unread(&zpq->rx_in) >= 5)
 			zpq_toggle_decompression(zpq);
 	}
 	return dst_pos;
@@ -552,14 +552,14 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 bool
 zpq_buffered_rx(ZpqStream * zpq)
 {
-	return zpq ? zpq_buf_unread(&zpq->rx) >= 5 || (zpq_buf_unread(&zpq->rx) > 0 && zpq->rx_msg_bytes_left > 0) || zs_buffered_rx(zpq->z_stream) : 0;
+	return zpq ? zpq_buf_unread(&zpq->rx_in) >= 5 || (zpq_buf_unread(&zpq->rx_in) > 0 && zpq->rx_msg_bytes_left > 0) || zs_buffered_rx(zpq->z_stream) : 0;
 }
 
 bool
 zpq_buffered_tx(ZpqStream * zpq)
 {
-    return zpq ? zpq_buf_unread(&zpq->raw_tx) >= 5 || (zpq_buf_unread(&zpq->raw_tx) > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx) > 0 ||
-                 zs_buffered_tx(zpq->z_stream) : 0;
+    return zpq ? zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0) || zpq_buf_unread(&zpq->tx_out) > 0 ||
+				 zs_buffered_tx(zpq->z_stream) : 0;
 }
 
 
