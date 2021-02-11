@@ -342,7 +342,8 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 				 * must return here because we can't continue without full
 				 * message header
 				 */
-				return src_pos;
+				*processed = src_pos;
+				return ZPQ_INCOMPLETE_HEADER;
 			}
 
 			msg_type = *((char *) src + src_pos);
@@ -359,7 +360,7 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 		 * repeat sending while there is some data in input or internal
 		 * compression buffer
 		 */
-	} while (src_pos < src_size);
+	} while (src_pos < src_size && zpq_buf_left(&zpq->tx_out));
 
 	return src_pos;
 }
@@ -370,13 +371,17 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 	size_t		src_pos = 0;
 	ssize_t		rc;
 
-	while (src_pos < src_size || zpq_buf_unread(&zpq->tx_in) >= 5 || (zpq_buf_unread(&zpq->tx_in) > 0 && zpq->tx_msg_bytes_left > 0))
+	while (zpq_buf_left(&zpq->tx_out))
 	{
 		size_t		copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
 
 		memcpy(zpq_buf_size(&zpq->tx_in), (char *) src + src_pos, copy_len);
 		zpq_buf_size_advance(&zpq->tx_in, copy_len);
 		src_pos += copy_len;
+
+		if (zpq_buf_unread(&zpq->tx_in) == 0 && !zs_buffered_tx(zpq->z_stream)) {
+			break;
+		}
 
 		size_t		processed = 0;
 
@@ -390,6 +395,9 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 		{
 			zpq_buf_pos_advance(&zpq->tx_in, processed);
 			zpq_buf_reuse(&zpq->tx_in);
+			if (rc == ZPQ_INCOMPLETE_HEADER) {
+				break;
+			}
 			*src_processed = src_pos;
 			return rc;
 		}
