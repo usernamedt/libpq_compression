@@ -346,7 +346,7 @@ zpq_write_internal(ZpqStream * zpq, void const *src, size_t src_size, size_t *pr
 		 * repeat sending while there is some data in input or internal
 		 * compression buffer
 		 */
-	} while (src_pos < src_size && zpq_buf_left(&zpq->tx_out));
+	} while (src_pos < src_size && zpq_buf_left(&zpq->tx_out) > 5);
 
 	return src_pos;
 }
