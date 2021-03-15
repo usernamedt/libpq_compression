@@ -371,7 +371,7 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 	size_t		src_pos = 0;
 	ssize_t		rc;
 
-	while (zpq_buf_left(&zpq->tx_out))
+	while (zpq_buf_left(&zpq->tx_out) > 5)
 	{
 		size_t		copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
 
