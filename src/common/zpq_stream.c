@@ -178,11 +178,15 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	ssize_t		rc;
 	uint32		size;
 
+	printf("zpq_write_comprm call: src_size: %zu, buffered_tx: %d\n", src_size, zs_buffered_tx(zpq->z_stream));
+	fflush(stdout);
 	/* check if have enough space */
 	if (zpq_buf_left(&zpq->tx_out) <= 5)
 	{
 		/* too little space for CompressedMessage, abort */
 		*src_processed = 0;
+        printf("zpq_write_comprm call: too little space: %zu\n", zpq_buf_left(&zpq->tx_out));
+        fflush(stdout);
 		return ZS_OK;
 	}
 
@@ -205,6 +209,8 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	zpq->tx_total += compressed_len;
 
 	zpq_buf_size_advance(&zpq->tx_out, compressed_len);
+    printf("zpq_write_compr OK: src_processed: %zu, compressed_len: %zu\n", *src_processed, compressed_len);
+    fflush(stdout);
 	return rc;
 }
 
