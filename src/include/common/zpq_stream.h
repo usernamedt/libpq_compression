@@ -12,7 +12,7 @@
 
 
 #define ZPQ_DEFAULT_COMPRESSION_LEVEL (1)
-
+#define ZPQ_INCOMPLETE_HEADER (-6)
 struct ZpqStream;
 typedef struct ZpqStream ZpqStream;
 
