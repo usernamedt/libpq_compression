@@ -225,8 +225,6 @@ zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_proc
 		*dst_processed = out.pos;
 		if (tx_not_flushed > 0)
 		{
-		    printf("OOPS..., tx_not_flushed: %zu, out_pos:%zu, out_size:%zu\n", tx_not_flushed, out.pos, out.size);
-		    fflush(stdout);
 			return ZS_DATA_PENDING;
 		}
 	}
