@@ -205,7 +205,7 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	zpq->tx_total += compressed_len;
 
 	zpq_buf_size_advance(&zpq->tx_out, compressed_len);
-    printf("stat_debug zpq_write_compr OK: src_processed: %zu, compressed_len: %zu, total_len: %zu\n", *src_processed, compressed_len, compressed_len + 5);
+    printf("stat_debug zpq_write_compr OK: src_processed: %zu, compressed_len: %zu, total_len: %zu, free_tx_space: %zu\n", *src_processed, compressed_len, compressed_len + 5, zpq_buf_left(&zpq->tx_out));
     fflush(stdout);
 	return rc;
 }
