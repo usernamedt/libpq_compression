@@ -205,8 +205,6 @@ zpq_write_compressed_message(ZpqStream * zpq, char const *src, size_t src_size, 
 	zpq->tx_total += compressed_len;
 
 	zpq_buf_size_advance(&zpq->tx_out, compressed_len);
-    printf("stat_debug zpq_write_compr OK: src_processed: %zu, compressed_len: %zu, total_len: %zu, free_tx_space: %zu\n", *src_processed, compressed_len, compressed_len + 5, zpq_buf_left(&zpq->tx_out));
-    fflush(stdout);
 	return rc;
 }
 
@@ -221,8 +219,6 @@ zpq_write_uncompressed(ZpqStream * zpq, char const *src, size_t src_size, size_t
 	zpq->tx_total += src_size;
 	zpq_buf_size_advance(&zpq->tx_out, src_size);
 	*src_processed = src_size;
-    printf("stat_debug zpq_write_uncompr OK: write_len: %zu\n", src_size);
-    fflush(stdout);
 }
 
 /* Determine if should compress the next message and
@@ -434,8 +430,6 @@ zpq_read_compressed_message(ZpqStream * zpq, char *dst, size_t dst_len, size_t *
 	zpq_buf_pos_advance(&zpq->rx_in, rx_processed);
 	zpq->rx_total_raw += *dst_processed;
 	zpq->rx_msg_bytes_left -= rx_processed;
-    printf("stat_debug zpq_read_compr OK: rx_read: %zu, dst_write: %zu\n", rx_processed, *dst_processed);
-    fflush(stdout);
 	return rc;
 }
 
@@ -452,8 +446,6 @@ zpq_read_uncompressed(ZpqStream * zpq, char *dst, size_t dst_len)
 	zpq_buf_pos_advance(&zpq->rx_in, copy_len);
 	zpq->rx_total_raw += copy_len;
 	zpq->rx_msg_bytes_left -= copy_len;
-    printf("stat_debug zpq_read_uncompr OK: read_len: %zu\n", copy_len);
-    fflush(stdout);
 	return copy_len;
 }
 
