@@ -464,8 +464,8 @@ void
 pqDropConnection(PGconn *conn, bool flushInput)
 {
 	/* Release compression streams */
-	zpq_free(conn->zstream);
-	conn->zstream = NULL;
+	zpq_free(conn->zpqStream);
+	conn->zpqStream = NULL;
 
 	/* Drop any SSL state */
 	pqsecure_close(conn);
@@ -2157,12 +2157,6 @@ connectDBComplete(PGconn *conn)
 				return 1;		/* success! */
 
 			case PGRES_POLLING_READING:
-			    /* if there is some buffered RX data in ZpqStream
-			     * then don't proceed to pqWaitTimed */
-			    if (zpq_buffered_rx(conn->zstream)) {
-			        break;
-			    }
-
 				ret = pqWaitTimed(1, 0, conn, finish_time);
 				if (ret == -1)
 				{
@@ -3240,10 +3234,11 @@ keep_going:						/* We will come back to here until there is
 						return PGRES_POLLING_READING;
 					}
 
-					if (beresp == 'z') /* Switch on compression */
+					if (beresp == 'z')	/* Switch on compression */
 					{
-						int index;
-						char resp;
+						int			index;
+						char		resp;
+
 						/* Read message length word */
 						if (pqGetInt(&msgLength, 4, conn))
 						{
@@ -3254,17 +3249,17 @@ keep_going:						/* We will come back to here until there is
 						{
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext(
-												  "expected compression algorithm specification message length is 5 bytes, but %d is received\n"),
+															"expected compression algorithm specification message length is 5 bytes, but %d is received\n"),
 											  msgLength);
 							goto error_return;
 						}
 						pqGetc(&resp, conn);
 						index = resp;
-						if (index == (char)-1)
+						if (index == (char) -1)
 						{
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext(
-												  "server does not support requested compression algorithms %s\n"),
+															"server does not support requested compression algorithms %s\n"),
 											  conn->compression);
 							goto error_return;
 						}
@@ -3273,22 +3268,25 @@ keep_going:						/* We will come back to here until there is
 						{
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext(
-												  "server returns incorrect compression aslogirhm  index: %d\n"),
+															"server returns incorrect compression aslogirhm  index: %d\n"),
 											  index);
 							goto error_return;
 						}
-						Assert(!conn->zstream);
-						conn->zstream = zpq_create(conn->compressors[index].impl,
-												   conn->compressors[index].level,
-                                                   conn->compressors[index].impl,
-												   (zpq_tx_func)pqsecure_write, (zpq_rx_func)pqsecure_read, conn,
-												   &conn->inBuffer[conn->inCursor], conn->inEnd-conn->inCursor);
-						if (!conn->zstream)
+						Assert(!conn->zpqStream);
+						conn->zpqStream = zpq_create(conn->compressors[index].impl,
+													 conn->compressors[index].level,
+													 conn->compressors[index].impl,
+													 (zpq_tx_func) pqsecure_write, (zpq_rx_func) pqsecure_read,
+													 conn,
+													 &conn->inBuffer[conn->inCursor],
+													 conn->inEnd - conn->inCursor);
+						if (!conn->zpqStream)
 						{
-							char** supported_algorithms = zpq_get_supported_algorithms();
+							char	  **supported_algorithms = zs_get_supported_algorithms();
+
 							appendPQExpBuffer(&conn->errorMessage,
 											  libpq_gettext(
-												  "failed to initialize compressor %s\n"),
+															"failed to initialize compressor %s\n"),
 											  supported_algorithms[conn->compressors[index].impl]);
 							free(supported_algorithms);
 							goto error_return;
@@ -3296,13 +3294,15 @@ keep_going:						/* We will come back to here until there is
 						/* reset buffer */
 						conn->inStart = conn->inCursor = conn->inEnd = 0;
 					}
-					else if (conn->n_compressors != 0 && beresp == 'v') /* negotiate protocol version */
+					else if (conn->n_compressors != 0 && beresp == 'v') /* negotiate protocol
+																		 * version */
 					{
 						appendPQExpBuffer(&conn->errorMessage,
 										  libpq_gettext(
-											  "server is not supporting libpq compression\n"));
+														"server is not supporting libpq compression\n"));
 						goto error_return;
-					} else
+					}
+					else
 						break;
 				}
 

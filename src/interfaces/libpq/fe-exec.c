@@ -1810,9 +1810,7 @@ PQgetResult(PGconn *conn)
 		 * EOF indication.  We expect therefore that this won't result in any
 		 * undue delay in reporting a previous write failure.)
 		 */
-		if (flushResult || (zpq_buffered_rx(conn->zstream) == 0 &&
-			pqWait(true, false, conn)) ||
-			pqReadData(conn) < 0)
+		if (flushResult || pqWait(true, false, conn) || pqReadData(conn) < 0)
 		{
 			/*
 			 * conn->errorMessage has been set by pqWait or pqReadData. We
@@ -3283,6 +3281,12 @@ int
 PQflush(PGconn *conn)
 {
 	return pqFlush(conn);
+}
+
+int
+PQreadPending(PGconn *conn)
+{
+	return pqReadPending(conn);
 }
 
 

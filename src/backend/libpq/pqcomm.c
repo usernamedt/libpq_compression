@@ -245,7 +245,7 @@ pq_configure(Port *port)
 	{
 		int			compression_level = ZPQ_DEFAULT_COMPRESSION_LEVEL;
 		int			impl = -1;
-		char	  **server_compression_algorithms = zpq_get_supported_algorithms();
+		char	  **server_compression_algorithms = zs_get_supported_algorithms();
 		int			index = -1;
 		char	   *protocol_extension = strchr(client_compression_algorithms, ';');
 
@@ -289,7 +289,8 @@ SendCompressionAck:
 
 		if (index >= 0)			/* Use compression */
 		{
-			PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort, NULL, 0);
+			PqStream = zpq_create(impl, compression_level, impl, write_compressed, read_compressed, MyProcPort,
+								  NULL, 0);
 			if (!PqStream)
 			{
 				ereport(LOG,
@@ -1080,7 +1081,7 @@ pq_recvbuf(bool nowait)
 
 		if (r < 0)
 		{
-			if (r == ZPQ_DECOMPRESS_ERROR)
+			if (r == ZS_DECOMPRESS_ERROR)
 			{
 				char const *msg = zpq_decompress_error(PqStream);
 
