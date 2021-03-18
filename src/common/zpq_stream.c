@@ -232,21 +232,7 @@ zpq_toggle_compression(ZpqStream * zpq, char msg_type, uint32 msg_len)
 	}
 	else if (zpq->is_compressing)
 	{
-		/*
-		 * Won't compress the next message, should now finish the compression.
-		 * Make sure there is no buffered data left in underlying compression
-		 * stream
-		 */
-		while (zs_buffered_tx(zpq->z_stream))
-		{
-			size_t		flushed_len = 0;
-			ssize_t		flush_rc = zpq_write_compressed_message(zpq, NULL, 0, &flushed_len);
-
-			if (flush_rc != ZS_OK)
-			{
-				return flush_rc;
-			}
-		}
+	    Assert(zs_buffered_tx(zpq->z_stream) == 0);
 		zpq->is_compressing = false;
 	}
 	zpq->tx_msg_bytes_left = msg_len + 1;

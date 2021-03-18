@@ -220,7 +220,7 @@ zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_proc
 	if (in.pos == src_size)		/* All data is compressed: flush internal zstd
 								 * buffer */
 	{
-		size_t		tx_not_flushed = ZSTD_flushStream(cs->stream, &out);
+		size_t		tx_not_flushed = ZSTD_endStream(cs->stream, &out);
 
 		*dst_processed = out.pos;
 		if (tx_not_flushed > 0)
@@ -384,7 +384,7 @@ zlib_compress(void *c_stream, void const *src, size_t src_size, size_t *src_proc
 	cs->next_in = (Bytef *) src;
 	cs->avail_in = src_size;
 
-	rc = deflate(cs, Z_SYNC_FLUSH);
+	rc = deflate(cs, Z_FULL_FLUSH);
 	Assert(rc == Z_OK);
 	*dst_processed = dst_size - cs->avail_out;
 	*src_processed = src_size - cs->avail_in;
