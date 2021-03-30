@@ -6666,17 +6666,17 @@ PQuser(const PGconn *conn)
 char *
 PQcompressor(const PGconn *conn)
 {
-	if (!conn || !conn->zstream)
+	if (!conn || !conn->zpqStream)
 		return NULL;
-	return (char*)zpq_compress_algorithm_name(conn->zstream);
+	return (char*)zpq_compress_algorithm_name(conn->zpqStream);
 }
 
 char *
 PQdecompressor(const PGconn *conn)
 {
-	if (!conn || !conn->zstream)
+	if (!conn || !conn->zpqStream)
 		return NULL;
-	return (char*)zpq_decompress_algorithm_name(conn->zstream);
+	return (char*)zpq_decompress_algorithm_name(conn->zpqStream);
 }
 
 char *

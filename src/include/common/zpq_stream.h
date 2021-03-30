@@ -79,3 +79,8 @@ extern char const *zpq_compress_error(ZpqStream * zpq);
  * Get the name of chosen compression algorithm.
  */
 extern char const *zpq_compress_algorithm_name(ZpqStream * zpq);
+
+/*
+ * Get the name of chosen decompression algorithm.
+ */
+extern char const *zpq_decompress_algorithm_name(ZpqStream * zpq);

@@ -604,3 +604,9 @@ zpq_compress_algorithm_name(ZpqStream * zpq)
 {
 	return zs_compress_algorithm_name(zpq->z_stream);
 }
+
+char const *
+zpq_decompress_algorithm_name(ZpqStream * zpq)
+{
+    return zs_decompress_algorithm_name(zpq->z_stream);
+}
