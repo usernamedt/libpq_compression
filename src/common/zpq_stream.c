@@ -54,13 +54,13 @@ zpq_buf_pos(ZpqBuffer * zb)
 	return (char *) (zb->buf) + zb->pos;
 }
 
-static inline void *
+static inline void
 zpq_buf_size_advance(ZpqBuffer * zb, size_t value)
 {
 	zb->size += value;
 }
 
-static inline void *
+static inline void
 zpq_buf_pos_advance(ZpqBuffer * zb, size_t value)
 {
 	zb->pos += value;
@@ -374,8 +374,9 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 	while (zpq_buf_left(&zpq->tx_out) > 5)
 	{
 		size_t		copy_len = Min(zpq_buf_left(&zpq->tx_in), src_size - src_pos);
+        size_t      processed;
 
-		memcpy(zpq_buf_size(&zpq->tx_in), (char *) src + src_pos, copy_len);
+        memcpy(zpq_buf_size(&zpq->tx_in), (char *) src + src_pos, copy_len);
 		zpq_buf_size_advance(&zpq->tx_in, copy_len);
 		src_pos += copy_len;
 
@@ -383,7 +384,7 @@ zpq_write(ZpqStream * zpq, void const *src, size_t src_size, size_t *src_process
 			break;
 		}
 
-		size_t		processed = 0;
+		processed = 0;
 
 		rc = zpq_write_internal(zpq, zpq_buf_pos(&zpq->tx_in), zpq_buf_unread(&zpq->tx_in), &processed);
 		if (rc > 0)
@@ -452,8 +453,9 @@ zpq_read_compressed_message(ZpqStream * zpq, char *dst, size_t dst_len, size_t *
 static inline size_t
 zpq_read_uncompressed(ZpqStream * zpq, char *dst, size_t dst_len)
 {
+    size_t		copy_len;
 	Assert(zpq_buf_unread(&zpq->rx_in) > 0);
-	size_t		copy_len = Min(zpq->rx_msg_bytes_left, Min(zpq_buf_unread(&zpq->rx_in), dst_len));
+	copy_len = Min(zpq->rx_msg_bytes_left, Min(zpq_buf_unread(&zpq->rx_in), dst_len));
 
 	memcpy(dst, zpq_buf_pos(&zpq->rx_in), copy_len);
 
@@ -517,6 +519,7 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 		while (zpq->rx_msg_bytes_left > 0 && (zpq_buf_unread(&zpq->rx_in) >= zpq->rx_msg_bytes_left + 5))
 		{
 			char		msg_type;
+            uint32		msg_len;
 
 			msg_type = *(zpq_buf_pos(&zpq->rx_in) + zpq->rx_msg_bytes_left);
 			if (zpq->is_decompressing || zpq_is_compressed_message(msg_type))
@@ -527,7 +530,6 @@ zpq_read(ZpqStream * zpq, void *dst, size_t dst_size)
 				 */
 				break;
 			}
-			uint32		msg_len;
 
 			memcpy(&msg_len, zpq_buf_pos(&zpq->rx_in) + zpq->rx_msg_bytes_left + 1, 4);
 			zpq->rx_msg_bytes_left += pg_ntoh32(msg_len) + 1;
