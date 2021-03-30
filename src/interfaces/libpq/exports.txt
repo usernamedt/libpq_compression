@@ -184,3 +184,6 @@ PQexitPipelineMode        181
 PQpipelineSync            182
 PQpipelineStatus          183
 PQtraceSetFlags           184
+PQcompressor              185
+PQdecompressor            186
+PQreadPending             187
