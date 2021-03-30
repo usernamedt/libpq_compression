@@ -185,3 +185,6 @@ PQpipelineSync            182
 PQpipelineStatus          183
 PQsetTraceFlags           184
 PQmblenBounded              185
+PQcompressor              186
+PQdecompressor            187
+PQreadPending             188
