@@ -235,14 +235,13 @@ zstd_compress(void *c_stream, void const *src, size_t src_size, size_t *src_proc
 static ssize_t
 zstd_end(void *c_stream, void *dst, size_t dst_size, size_t *dst_processed)
 {
+	size_t		tx_not_flushed;
 	ZPQ_ZSTD_CStream *cs = (ZPQ_ZSTD_CStream *) c_stream;
 	ZSTD_outBuffer output;
 
 	output.dst = dst;
 	output.pos = 0;
 	output.size = dst_size;
-
-	size_t		tx_not_flushed;
 
 	do
 	{
@@ -528,12 +527,13 @@ zs_create(int c_alg_impl, int c_level, int d_alg_impl)
 ssize_t
 zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
+	ssize_t		rc;
 	*src_processed = 0;
 	*dst_processed = 0;
 
-	ssize_t		rc = zs->d_algorithm->decompress(zs->d_stream,
-												 src, src_size, src_processed,
-												 dst, dst_size, dst_processed);
+	rc = zs->d_algorithm->decompress(zs->d_stream,
+									 src, src_size, src_processed,
+									 dst, dst_size, dst_processed);
 
 	zs->rx_not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
@@ -553,12 +553,13 @@ zs_read(ZStream * zs, void const *src, size_t src_size, size_t *src_processed, v
 ssize_t
 zs_write(ZStream * zs, void const *buf, size_t size, size_t *processed, void *dst, size_t dst_size, size_t *dst_processed)
 {
+	ssize_t		rc;
 	*processed = 0;
 	*dst_processed = 0;
 
-	ssize_t		rc = zs->c_algorithm->compress(zs->c_stream,
-											   buf, size, processed,
-											   dst, dst_size, dst_processed);
+	rc = zs->c_algorithm->compress(zs->c_stream,
+								   buf, size, processed,
+								   dst, dst_size, dst_processed);
 
 	zs->tx_not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
@@ -594,9 +595,10 @@ zs_free(ZStream * zs)
 ssize_t
 zs_end(ZStream * zs, void *dst, size_t dst_size, size_t *dst_processed)
 {
+	ssize_t		rc;
 	*dst_processed = 0;
 
-	ssize_t		rc = zs->c_algorithm->end_compression(zs->c_stream, dst, dst_size, dst_processed);
+	rc = zs->c_algorithm->end_compression(zs->c_stream, dst, dst_size, dst_processed);
 
 	zs->tx_not_flushed = false;
 	if (rc == ZS_DATA_PENDING)
